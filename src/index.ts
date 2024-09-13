@@ -76,7 +76,10 @@ function initializeCursorUpdate() {
   }, CURSOR_UPDATE_INTERVAL_MS);
 }
 
-// Function to handle "com" events
+// src/index.ts
+
+// ... [imports remain unchanged]
+
 function handleComEvent(event: any) {
   const commit = event.commit;
   if (!commit) {
@@ -126,14 +129,25 @@ function handleComEvent(event: any) {
         if (typeof postRecord.createdAt !== 'string') {
           throw new Error('Invalid or missing "createdAt" in record');
         }
-        if (!Array.isArray(postRecord.langs)) {
-          throw new Error('"langs" must be an array in record');
+        // Handle "langs" field
+        let langs: string[] = [];
+        if ('langs' in postRecord) {
+          if (Array.isArray(postRecord.langs)) {
+            langs = postRecord.langs.filter((lang: any) => typeof lang === 'string');
+          } else {
+            logger.warn(`"langs" field is not an array in record`, { record });
+            // Optionally, you can decide to throw an error here
+            // throw new Error('"langs" must be an array in record');
+          }
+        } else {
+          logger.warn(`"langs" field is missing in record`, { record });
+          // Default to empty array or handle as needed
         }
 
         const post = {
           id: `${event.did}:${rkey}`,
           created_at: postRecord.createdAt || new Date().toISOString(),
-          langs: postRecord.langs.filter((lang: any) => typeof lang === 'string'),
+          langs: langs,
           did: event.did || 'unknown',
           time_us: typeof event.time_us === 'number' ? event.time_us : Date.now() * 1000,
           type: postType, // Assign the correct type
@@ -182,14 +196,25 @@ function handleComEvent(event: any) {
         if (typeof postRecord.createdAt !== 'string') {
           throw new Error('Invalid or missing "createdAt" in record');
         }
-        if (!Array.isArray(postRecord.langs)) {
-          throw new Error('"langs" must be an array in record');
+        // Handle "langs" field
+        let langs: string[] = [];
+        if ('langs' in postRecord) {
+          if (Array.isArray(postRecord.langs)) {
+            langs = postRecord.langs.filter((lang: any) => typeof lang === 'string');
+          } else {
+            logger.warn(`"langs" field is not an array in record`, { record });
+            // Optionally, you can decide to throw an error here
+            // throw new Error('"langs" must be an array in record');
+          }
+        } else {
+          logger.warn(`"langs" field is missing in record`, { record });
+          // Default to empty array or handle as needed
         }
 
         const post = {
           id: `${event.did}:${rkey}`,
           created_at: postRecord.createdAt || new Date().toISOString(),
-          langs: postRecord.langs.filter((lang: any) => typeof lang === 'string'),
+          langs: langs,
           did: event.did || 'unknown',
           time_us: typeof event.time_us === 'number' ? event.time_us : Date.now() * 1000,
           type: postType,

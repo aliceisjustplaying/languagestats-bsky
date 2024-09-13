@@ -9,6 +9,8 @@ const dbPath = path.resolve(__dirname, '../data/posts.db');
 const db = new Database(dbPath);
 
 // Initialize the database schema with normalized languages and cursor management
+// Inside the db.exec() block in src/db.ts
+
 db.exec(`
   PRAGMA foreign_keys = ON;
 
@@ -90,6 +92,11 @@ export function updateLastCursor(newCursor: number): void {
 }
 
 // Function to insert or update a post and its languages
+// src/db.ts
+
+// ... [imports and initial setup remain unchanged]
+
+// Modify the savePost function to handle nested objects
 export function savePost(post: {
   id: string;
   created_at: string;
@@ -113,8 +120,8 @@ export function savePost(post: {
       collection: postData.collection,
       rkey: postData.rkey,
       cursor: postData.cursor,
-      embed: postData.embed ? JSON.stringify(postData.embed) : null,
-      reply: postData.reply ? JSON.stringify(postData.reply) : null,
+      embed: postData.embed ? JSON.stringify(postData.embed) : null,   // Serialize embed
+      reply: postData.reply ? JSON.stringify(postData.reply) : null,   // Serialize reply
     });
 
     postData.langs.forEach((lang) => {

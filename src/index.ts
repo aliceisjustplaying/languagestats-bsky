@@ -129,19 +129,23 @@ function handleComEvent(event: any) {
         if (typeof postRecord.createdAt !== 'string') {
           throw new Error('Invalid or missing "createdAt" in record');
         }
+
         // Handle "langs" field
         let langs: string[] = [];
         if ('langs' in postRecord) {
           if (Array.isArray(postRecord.langs)) {
             langs = postRecord.langs.filter((lang: any) => typeof lang === 'string');
+            if (langs.length === 0) {
+              logger.warn(`"langs" array is empty or contains no valid strings in record`, { record });
+              langs = ['UNKNOWN'];
+            }
           } else {
             logger.warn(`"langs" field is not an array in record`, { record });
-            // Optionally, you can decide to throw an error here
-            // throw new Error('"langs" must be an array in record');
+            langs = ['UNKNOWN'];
           }
         } else {
           logger.warn(`"langs" field is missing in record`, { record });
-          // Default to empty array or handle as needed
+          langs = ['UNKNOWN'];
         }
 
         const post = {
@@ -196,19 +200,23 @@ function handleComEvent(event: any) {
         if (typeof postRecord.createdAt !== 'string') {
           throw new Error('Invalid or missing "createdAt" in record');
         }
+
         // Handle "langs" field
         let langs: string[] = [];
         if ('langs' in postRecord) {
           if (Array.isArray(postRecord.langs)) {
             langs = postRecord.langs.filter((lang: any) => typeof lang === 'string');
+            if (langs.length === 0) {
+              logger.warn(`"langs" array is empty or contains no valid strings in record`, { record });
+              langs = ['UNKNOWN'];
+            }
           } else {
             logger.warn(`"langs" field is not an array in record`, { record });
-            // Optionally, you can decide to throw an error here
-            // throw new Error('"langs" must be an array in record');
+            langs = ['UNKNOWN'];
           }
         } else {
           logger.warn(`"langs" field is missing in record`, { record });
-          // Default to empty array or handle as needed
+          langs = ['UNKNOWN'];
         }
 
         const post = {
@@ -370,7 +378,7 @@ app.get('/metrics', async (req, res) => {
   }
 });
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '127.0.0.1', () => {
   logger.info(`Metrics server listening on port ${PORT}`);
 });
 

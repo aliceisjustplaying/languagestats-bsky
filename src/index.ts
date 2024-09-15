@@ -18,6 +18,7 @@ import {
   register,
   updateMetrics,
 } from './metrics';
+import { Post } from './types';
 import { extractEmojis } from './utils';
 
 dotenv.config();
@@ -65,9 +66,11 @@ function logUnexpectedEvent(eventType: string, collection: string, eventId: stri
 }
 
 // Create WebSocket connection
-function constructFirehoseURL(cursor: bigint = BigInt(0)): string {
+function constructFirehoseURL(cursor = BigInt(0)): string {
   const url = new URL(FIREHOSE_URL);
-  WANTED_COLLECTIONS.forEach((collection) => url.searchParams.append('wantedCollections', collection));
+  WANTED_COLLECTIONS.forEach((collection) => {
+    url.searchParams.append('wantedCollections', collection);
+  });
   if (cursor > BigInt(0)) {
     url.searchParams.append('cursor', cursor.toString());
   }
@@ -133,7 +136,7 @@ async function handleComEvent(event: any) {
         }
 
         // Validate postRecord fields
-        const postType = postRecord['$type'] || postRecord.type;
+        const postType = postRecord.$type || postRecord.type;
         if (typeof postType !== 'string') {
           throw new Error('Invalid or missing "$type" in record');
         }
@@ -323,7 +326,7 @@ function connect() {
   });
 
   ws.on('error', (error) => {
-    logger.error(`WebSocket error: ${(error as Error).message}`);
+    logger.error(`WebSocket error: ${error.message}`);
     incrementErrors();
     ws?.close();
   });

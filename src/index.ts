@@ -1,23 +1,32 @@
 // src/index.ts
-
-import WebSocket from 'ws';
-import { savePost, softDeletePost, closeDatabase, getLastCursor, updateLastCursor } from './db';
-import { updateMetrics, incrementPosts, incrementErrors, incrementUnexpectedEvent, register } from './metrics';
-import express from 'express';
+// Assuming you have a logger setup
 import dotenv from 'dotenv';
-import process from 'process';
-import logger from './logger';
+import express from 'express';
+// Metrics setup
 import { RateLimiterMemory } from 'rate-limiter-flexible';
+import WebSocket from 'ws';
+
+import { closeDatabase, getLastCursor, incrementEmojiData, savePost, softDeletePost, updateLastCursor } from './db';
+import logger from './logger';
+// Utility function to extract emojis
+import {
+  incrementEmojiPerLanguage,
+  incrementEmojiTotal,
+  incrementErrors,
+  incrementPosts,
+  incrementUnexpectedEvent,
+  register,
+  updateMetrics,
+} from './metrics';
+import { extractEmojis } from './utils';
 
 dotenv.config();
 
 // Configuration
-const FIREHOSE_URL = process.env.FIREHOSE_URL || 'ws://localhost:8080'; // Pointing to mock server for testing
-const PORT = parseInt(process.env.PORT || '3000', 10);
-const WANTED_COLLECTIONS = process.env.WANTED_COLLECTIONS
-  ? process.env.WANTED_COLLECTIONS.split(',')
-  : ['app.bsky.feed.post'];
-const PURGE_DAYS = parseInt(process.env.PURGE_DAYS || '7', 10);
+const FIREHOSE_URL = process.env.FIREHOSE_URL ?? 'ws://localhost:8080'; // Replace with actual URL
+const PORT = parseInt(process.env.PORT ?? '3000', 10);
+const WANTED_COLLECTIONS =
+  process.env.WANTED_COLLECTIONS ? process.env.WANTED_COLLECTIONS.split(',') : ['app.bsky.feed.post'];
 const RECONNECT_DELAY_MS = 1000; // Initial reconnect delay in ms
 const CURSOR_UPDATE_INTERVAL_MS = 10 * 1000; // 10 seconds
 
@@ -35,16 +44,20 @@ const unexpectedEventRateLimiter = new RateLimiterMemory({
 
 // Function to log unexpected events with rate limiting
 function logUnexpectedEvent(eventType: string, collection: string, eventId: string, did: string, rawEvent?: any) {
-  unexpectedEventRateLimiter.consume('unexpectedEvent')
+  unexpectedEventRateLimiter
+    .consume('unexpectedEvent')
     .then(() => {
-      logger.warn({
-        message: 'Received unexpected event structure',
-        eventType,
-        collection,
-        eventId,
-        did,
-        rawEvent,
-      }, 'Received unexpected event structure');
+      logger.warn(
+        {
+          message: 'Received unexpected event structure',
+          eventType,
+          collection,
+          eventId,
+          did,
+          rawEvent,
+        },
+        'Received unexpected event structure',
+      );
     })
     .catch(() => {
       // Rate limit exceeded: do not log
@@ -52,10 +65,10 @@ function logUnexpectedEvent(eventType: string, collection: string, eventId: stri
 }
 
 // Create WebSocket connection
-function constructFirehoseURL(cursor: number = 0): string {
+function constructFirehoseURL(cursor: bigint = BigInt(0)): string {
   const url = new URL(FIREHOSE_URL);
   WANTED_COLLECTIONS.forEach((collection) => url.searchParams.append('wantedCollections', collection));
-  if (cursor > 0) {
+  if (cursor > BigInt(0)) {
     url.searchParams.append('cursor', cursor.toString());
   }
   return url.toString();
@@ -63,24 +76,21 @@ function constructFirehoseURL(cursor: number = 0): string {
 
 let ws: WebSocket | null = null;
 let reconnectAttempts = 0;
-let latestCursor = getLastCursor();
+let latestCursor = BigInt(0);
 let cursorUpdateInterval: NodeJS.Timeout | null = null;
 
 // Function to initialize cursor update interval
 function initializeCursorUpdate() {
-  cursorUpdateInterval = setInterval(() => {
-    if (latestCursor > 0) {
-      updateLastCursor(latestCursor);
-      logger.debug(`Cursor updated to ${latestCursor} at ${new Date().toISOString()}`);
+  cursorUpdateInterval = setInterval(async () => {
+    if (latestCursor > BigInt(0)) {
+      await updateLastCursor(latestCursor);
+      logger.debug(`Cursor updated to ${latestCursor.toString()} at ${new Date().toISOString()}`);
     }
   }, CURSOR_UPDATE_INTERVAL_MS);
 }
 
-// src/index.ts
-
-// ... [imports remain unchanged]
-
-function handleComEvent(event: any) {
+// Function to handle "com" events
+async function handleComEvent(event: any) {
   const commit = event.commit;
   if (!commit) {
     logger.warn('Commit field is missing in "com" event', { event });
@@ -105,8 +115,9 @@ function handleComEvent(event: any) {
 
   switch (opType) {
     case 'c': // Create
+    case 'u': // Update
       if (!record) {
-        logger.warn('Record is missing in "create" commit', { commit });
+        logger.warn(`Record is missing in "${opType}" commit`, { commit });
         incrementUnexpectedEvent('com', collection);
         return;
       }
@@ -148,98 +159,59 @@ function handleComEvent(event: any) {
           langs = ['UNKNOWN'];
         }
 
-        const post = {
+        // Extract post content from 'embed' field
+        let postContent = '';
+        if (postRecord.embed && typeof postRecord.embed === 'object') {
+          // Adjust the path based on the actual structure of 'embed'
+          // Assuming 'text' field contains the post content
+          postContent = postRecord.embed.text || '';
+        }
+
+        const emojis = extractEmojis(postContent);
+
+        const post: Post = {
           id: `${event.did}:${rkey}`,
-          created_at: postRecord.createdAt || new Date().toISOString(),
-          langs: langs,
+          created_at: new Date(postRecord.createdAt).toISOString(),
           did: event.did || 'unknown',
-          time_us: typeof event.time_us === 'number' ? event.time_us : Date.now() * 1000,
+          time_us: typeof event.time_us === 'number' ? BigInt(event.time_us) : BigInt(Date.now()) * BigInt(1000),
           type: postType, // Assign the correct type
           collection: collection || 'unknown',
           rkey: rkey,
-          cursor: event.time_us,
-          embed: postRecord.embed || null,   // Handle optional embed
-          reply: postRecord.reply || null,   // Handle optional reply
+          cursor: typeof event.time_us === 'number' ? BigInt(event.time_us) : BigInt(Date.now()) * BigInt(1000),
+          is_deleted: postRecord.is_deleted || false,
+          embed: postRecord.embed || null, // Handle optional embed
+          reply: postRecord.reply || null, // Handle optional reply
         };
-        savePost(post);
-        updateMetrics(post.langs);
+
+        // Save post and languages
+        await savePost(
+          post,
+          langs.map((lang) => ({ post_id: post.id, language: lang })),
+        );
+
+        // Update metrics
+        updateMetrics(langs);
         incrementPosts();
-        if (event.time_us > latestCursor) {
-          latestCursor = event.time_us;
-        }
-      } catch (error) {
-        logger.error(`Error parsing record in "create" commit: ${(error as Error).message}`, { commit, record });
-        // Log the entire record for debugging
-        logger.error(`Malformed record data: ${JSON.stringify(record)}`);
-        incrementErrors();
-      }
-      break;
 
-    case 'u': // Update
-      if (!record) {
-        logger.warn('Record is missing in "update" commit', { commit });
-        incrementUnexpectedEvent('com', collection);
-        return;
-      }
-      try {
-        // Parse the record
-        let postRecord;
-        if (typeof record === 'string') {
-          postRecord = JSON.parse(record);
-        } else if (typeof record === 'object') {
-          postRecord = record;
-        } else {
-          throw new Error('Record is neither a string nor an object');
+        // Update latest cursor
+        const eventCursor =
+          typeof event.time_us === 'number' ? BigInt(event.time_us) : BigInt(Date.now()) * BigInt(1000);
+        if (eventCursor > latestCursor) {
+          latestCursor = eventCursor;
         }
 
-        // Validate postRecord fields
-        const postType = postRecord['$type'] || postRecord.type;
-        if (typeof postType !== 'string') {
-          throw new Error('Invalid or missing "$type" in record');
-        }
-        if (typeof postRecord.createdAt !== 'string') {
-          throw new Error('Invalid or missing "createdAt" in record');
-        }
-
-        // Handle "langs" field
-        let langs: string[] = [];
-        if ('langs' in postRecord) {
-          if (Array.isArray(postRecord.langs)) {
-            langs = postRecord.langs.filter((lang: any) => typeof lang === 'string');
-            if (langs.length === 0) {
-              logger.warn(`"langs" array is empty or contains no valid strings in record`, { record });
-              langs = ['UNKNOWN'];
-            }
-          } else {
-            logger.warn(`"langs" field is not an array in record`, { record });
-            langs = ['UNKNOWN'];
+        // Update Emoji Statistics
+        const currentDate = getCurrentDate();
+        for (const emoji of emojis) {
+          for (const lang of langs) {
+            await incrementEmojiData(emoji, lang, currentDate);
+            incrementEmojiPerLanguage(emoji, lang);
           }
-        } else {
-          logger.warn(`"langs" field is missing in record`, { record });
-          langs = ['UNKNOWN'];
-        }
-
-        const post = {
-          id: `${event.did}:${rkey}`,
-          created_at: postRecord.createdAt || new Date().toISOString(),
-          langs: langs,
-          did: event.did || 'unknown',
-          time_us: typeof event.time_us === 'number' ? event.time_us : Date.now() * 1000,
-          type: postType,
-          collection: collection || 'unknown',
-          rkey: rkey,
-          cursor: event.time_us,
-          embed: postRecord.embed || null,
-          reply: postRecord.reply || null,
-        };
-        savePost(post); // Assuming savePost can handle both insert and update
-        updateMetrics(post.langs);
-        incrementPosts();
-        if (event.time_us > latestCursor) {
-          latestCursor = event.time_us;
+          // Update Prometheus metrics
+          incrementEmojiTotal(emoji);
         }
       } catch (error) {
-        logger.error(`Error parsing record in "update" commit: ${(error as Error).message}`, { commit, record });
+        logger.error(`Error parsing record in "${opType}" commit: ${(error as Error).message}`, { commit, record });
         // Log the entire record for debugging
         logger.error(`Malformed record data: ${JSON.stringify(record)}`);
         incrementErrors();
@@ -249,10 +221,15 @@ function handleComEvent(event: any) {
     case 'd': // Delete
       try {
         const postId = `${event.did}:${rkey}`;
-        softDeletePost(postId, event.time_us);
+        await softDeletePost(
+          postId,
+          typeof event.time_us === 'number' ? BigInt(event.time_us) : BigInt(Date.now()) * BigInt(1000),
+        );
         // Optionally, update metrics or handle language counts
-        if (event.time_us > latestCursor) {
-          latestCursor = event.time_us;
+        const eventCursor =
+          typeof event.time_us === 'number' ? BigInt(event.time_us) : BigInt(Date.now()) * BigInt(1000);
+        if (eventCursor > latestCursor) {
+          latestCursor = eventCursor;
         }
       } catch (error) {
         logger.error(`Error deleting post: ${(error as Error).message}`, { rkey });
@@ -330,7 +307,7 @@ function connect() {
     }
   });
 
-  ws.on('message', (data: WebSocket.Data) => {
+  ws.on('message', async (data: WebSocket.Data) => {
     try {
       const event = JSON.parse(data.toString());
       processEvent(event);
@@ -361,8 +338,16 @@ async function attemptReconnect() {
   connect();
 }
 
-// Start initial connection
-connect();
+// Initialize and connect
+(async () => {
+  try {
+    latestCursor = await getLastCursor();
+    connect();
+  } catch (error) {
+    logger.error(`Error during initialization: ${(error as Error).message}`);
+    process.exit(1);
+  }
+})();
 
 // Set up Express server for Prometheus metrics
 const app = express();
@@ -378,7 +363,7 @@ app.get('/metrics', async (req, res) => {
   }
 });
 
-const server = app.listen(PORT, '127.0.0.1', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info(`Metrics server listening on port ${PORT}`);
 });
 
@@ -391,10 +376,15 @@ function shutdown() {
   if (cursorUpdateInterval) {
     clearInterval(cursorUpdateInterval);
   }
-  server.close(() => {
+  server.close(async () => {
     logger.info('HTTP server closed.');
-    closeDatabase();
-    process.exit(0);
+    try {
+      await closeDatabase();
+      process.exit(0);
+    } catch (error) {
+      logger.error(`Error during shutdown: ${(error as Error).message}`);
+      process.exit(1);
+    }
   });
 
   // Force shutdown after 10 seconds

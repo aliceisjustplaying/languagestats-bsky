@@ -1,216 +1,260 @@
 // src/db.ts
+import dotenv from 'dotenv';
+import { Pool } from 'pg';
 
-import Database from 'better-sqlite3';
-import path from 'path';
 import logger from './logger';
 
-// Define the path for the SQLite database
-const dbPath = path.resolve(__dirname, '../data/posts.db');
-const db = new Database(dbPath);
+// Assuming you have a logger setup
 
-// Initialize the database schema with normalized languages and cursor management
-// Inside the db.exec() block in src/db.ts
+dotenv.config();
 
-db.exec(`
-  PRAGMA foreign_keys = ON;
+// Initialize PostgreSQL pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20, // Maximum number of connections
+  idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
+});
 
-  CREATE TABLE IF NOT EXISTS posts (
-    id TEXT PRIMARY KEY,
-    created_at TEXT,
-    did TEXT,
-    time_us INTEGER,
-    type TEXT,
-    collection TEXT,
-    rkey TEXT,
-    cursor INTEGER,
-    is_deleted BOOLEAN DEFAULT FALSE,
-    embed TEXT,    -- Serialized embed data
-    reply TEXT     -- Serialized reply data
-  );
+// Handle connection errors
+pool.on('error', (err) => {
+  logger.error('Unexpected error on idle client', err);
+  process.exit(-1);
+});
 
-  CREATE TABLE IF NOT EXISTS languages (
-    post_id TEXT,
-    language TEXT,
-    FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_languages_language ON languages(language);
-
-  CREATE TABLE IF NOT EXISTS cursor (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    last_cursor INTEGER
-  );
-
-  INSERT OR IGNORE INTO cursor (id, last_cursor) VALUES (1, 0);
-`);
-
-// Prepared statements for performance
-const insertPost = db.prepare(`
-  INSERT OR IGNORE INTO posts (id, created_at, did, time_us, type, collection, rkey, cursor, embed, reply)
-  VALUES (@id, @created_at, @did, @time_us, @type, @collection, @rkey, @cursor, @embed, @reply)
-`);
-
-const updatePost = db.prepare(`
-  UPDATE posts
-  SET created_at = @created_at,
-      did = @did,
-      time_us = @time_us,
-      type = @type,
-      collection = @collection,
-      rkey = @rkey,
-      cursor = @cursor,
-      is_deleted = @is_deleted,
-      embed = @embed,
-      reply = @reply
-  WHERE id = @id
-`);
-
-const softDeletePostStmt = db.prepare(`
-  UPDATE posts
-  SET is_deleted = TRUE, cursor = @cursor
-  WHERE id = @id
-`);
-
-const insertLanguage = db.prepare(`
-  INSERT INTO languages (post_id, language)
-  VALUES (@post_id, @language)
-`);
-
-const getLastCursorStmt = db.prepare(`SELECT last_cursor FROM cursor WHERE id = 1`);
-const updateCursorStmt = db.prepare(`UPDATE cursor SET last_cursor = @last_cursor WHERE id = 1`);
-
-// Function to get the last cursor
-export function getLastCursor(): number {
-  const row = getLastCursorStmt.get();
-  return row ? row.last_cursor : 0;
-}
-
-// Function to update the last cursor
-export function updateLastCursor(newCursor: number): void {
-  updateCursorStmt.run({ last_cursor: newCursor });
-  logger.debug(`Updated last cursor to ${newCursor}`);
-}
-
-// Function to insert or update a post and its languages
-// src/db.ts
-
-// ... [imports and initial setup remain unchanged]
-
-// Modify the savePost function to handle nested objects
-export function savePost(post: {
+// TypeScript Interfaces for Tables
+interface Post {
   id: string;
-  created_at: string;
-  langs: string[];
+  created_at: string; // ISO string
   did: string;
-  time_us: number;
+  time_us: bigint;
   type: string;
   collection: string;
   rkey: string;
-  cursor: number;
-  embed?: any;   // Optional field
-  reply?: any;   // Optional field
-}) {
-  const insertOrUpdate = db.transaction((postData: typeof post) => {
-    insertPost.run({
-      id: postData.id,
-      created_at: postData.created_at,
-      did: postData.did,
-      time_us: postData.time_us,
-      type: postData.type,
-      collection: postData.collection,
-      rkey: postData.rkey,
-      cursor: postData.cursor,
-      embed: postData.embed ? JSON.stringify(postData.embed) : null,   // Serialize embed
-      reply: postData.reply ? JSON.stringify(postData.reply) : null,   // Serialize reply
-    });
+  cursor: bigint;
+  is_deleted: boolean;
+  embed: any; // JSONB
+  reply: any; // JSONB
+}
 
-    postData.langs.forEach((lang) => {
-      if (typeof lang === 'string') {
-        insertLanguage.run({
-          post_id: postData.id,
-          language: lang,
-        });
-      } else {
-        logger.warn(`Invalid language type: ${typeof lang} for lang: ${lang}`, { lang });
-      }
-    });
+interface Language {
+  post_id: string;
+  language: string;
+}
 
-    logger.debug(`Saved/Updated post ${postData.id}`);
-  });
+interface Emoji {
+  emoji: string;
+  count: bigint;
+}
 
+interface EmojiPerLanguage {
+  language: string;
+  emoji: string;
+  count: bigint;
+}
+
+interface EmojiDaily {
+  time: string; // YYYY-MM-DD
+  emoji: string;
+  count: bigint;
+}
+
+interface EmojiPerLanguageDaily {
+  time: string; // YYYY-MM-DD
+  language: string;
+  emoji: string;
+  count: bigint;
+}
+
+// Database Operations
+
+/**
+ * Saves or updates a post and its associated languages.
+ * @param post The post object containing all necessary fields.
+ */
+export async function savePost(post: Post, languages: Language[]): Promise<void> {
+  const client = await pool.connect();
   try {
-    // Validate data types before running the transaction
-    if (typeof post.id !== 'string' || post.id.trim() === '') {
-      throw new Error('Invalid or missing "id"');
-    }
-    if (typeof post.created_at !== 'string') {
-      throw new Error('Invalid "created_at"');
-    }
-    if (!Array.isArray(post.langs)) {
-      throw new Error('Invalid "langs"');
-    }
-    if (typeof post.did !== 'string') {
-      throw new Error('Invalid "did"');
-    }
-    if (typeof post.time_us !== 'number') {
-      throw new Error('Invalid "time_us"');
-    }
-    if (typeof post.type !== 'string') {
-      throw new Error('Invalid "type"');
-    }
-    if (typeof post.collection !== 'string') {
-      throw new Error('Invalid "collection"');
-    }
-    if (typeof post.rkey !== 'string') {
-      throw new Error('Invalid "rkey"');
-    }
-    if (typeof post.cursor !== 'number') {
-      throw new Error('Invalid "cursor"');
+    await client.query('BEGIN');
+
+    // Insert or update the post
+    const insertPostText = `
+      INSERT INTO posts (id, created_at, did, time_us, type, collection, rkey, cursor, is_deleted, embed, reply)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      ON CONFLICT (id) DO UPDATE SET
+        created_at = EXCLUDED.created_at,
+        did = EXCLUDED.did,
+        time_us = EXCLUDED.time_us,
+        type = EXCLUDED.type,
+        collection = EXCLUDED.collection,
+        rkey = EXCLUDED.rkey,
+        cursor = EXCLUDED.cursor,
+        is_deleted = EXCLUDED.is_deleted,
+        embed = EXCLUDED.embed,
+        reply = EXCLUDED.reply;
+    `;
+    const insertPostValues = [
+      post.id,
+      post.created_at,
+      post.did,
+      post.time_us,
+      post.type,
+      post.collection,
+      post.rkey,
+      post.cursor,
+      post.is_deleted,
+      post.embed,
+      post.reply,
+    ];
+    await client.query(insertPostText, insertPostValues);
+
+    // Insert languages
+    const insertLanguageText = `
+      INSERT INTO languages (post_id, language)
+      VALUES ($1, $2)
+      ON CONFLICT DO NOTHING;
+    `;
+    for (const lang of languages) {
+      const insertLanguageValues = [lang.post_id, lang.language];
+      await client.query(insertLanguageText, insertLanguageValues);
     }
 
-    insertOrUpdate(post);
+    await client.query('COMMIT');
+    logger.debug(`Saved/Updated post ${post.id}`);
   } catch (error) {
-    logger.error(`Database insertion/update error: ${(error as Error).message}`, { post });
-    // Optionally, handle specific error types or implement retries
+    await client.query('ROLLBACK');
+    logger.error(`Error saving/updating post ${post.id}: ${(error as Error).message}`);
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
-// Function to perform soft delete
-export function softDeletePost(postId: string, cursor: number) {
+/**
+ * Performs a soft delete of a post.
+ * @param postId The ID of the post to delete.
+ * @param cursor The cursor value associated with the delete operation.
+ */
+export async function softDeletePost(postId: string, cursor: bigint): Promise<void> {
+  const client = await pool.connect();
   try {
-    const info = softDeletePostStmt.run({
-      id: postId,
-      cursor: cursor,
-    });
-    if (info.changes > 0) {
-      logger.debug(`Soft deleted post ${postId}`);
-    } else {
-      logger.warn(`Attempted to soft delete non-existent post ${postId}`);
-    }
+    const updateText = `
+      UPDATE posts
+      SET is_deleted = TRUE, cursor = $1
+      WHERE id = $2;
+    `;
+    const updateValues = [cursor, postId];
+    await client.query(updateText, updateValues);
+    logger.debug(`Soft deleted post ${postId}`);
   } catch (error) {
-    logger.error(`Error soft deleting post: ${(error as Error).message}`, { postId });
+    logger.error(`Error soft deleting post ${postId}: ${(error as Error).message}`);
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
-// Function to purge old posts (older than X days)
-export function purgeOldPosts(days: number) {
-  const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  const stmt = db.prepare(`DELETE FROM posts WHERE created_at < ? AND is_deleted = TRUE`);
-  const info = stmt.run(cutoffDate);
-  logger.info(`Purged ${info.changes} soft-deleted posts older than ${days} days.`);
+/**
+ * Increments emoji counts (aggregate and per-language) and time-series counts.
+ * @param emoji The emoji to increment.
+ * @param language The language associated with the emoji.
+ * @param date The date (YYYY-MM-DD) of the emoji usage.
+ */
+export async function incrementEmojiData(emoji: string, language: string, date: string): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Update aggregate emoji count
+    const upsertEmojiText = `
+      INSERT INTO emojis (emoji, count)
+      VALUES ($1, 1)
+      ON CONFLICT (emoji) DO UPDATE SET count = emojis.count + 1;
+    `;
+    await client.query(upsertEmojiText, [emoji]);
+
+    // Update per-language emoji count
+    const upsertEmojiPerLanguageText = `
+      INSERT INTO emojis_per_language (language, emoji, count)
+      VALUES ($1, $2, 1)
+      ON CONFLICT (language, emoji) DO UPDATE SET count = emojis_per_language.count + 1;
+    `;
+    await client.query(upsertEmojiPerLanguageText, [language, emoji]);
+
+    // Update emojis_daily
+    const upsertEmojiDailyText = `
+      INSERT INTO emojis_daily (time, emoji, count)
+      VALUES ($1, $2, 1)
+      ON CONFLICT (time, emoji) DO UPDATE SET count = emojis_daily.count + 1;
+    `;
+    await client.query(upsertEmojiDailyText, [date, emoji]);
+
+    // Update emojis_per_language_daily
+    const upsertEmojiPerLanguageDailyText = `
+      INSERT INTO emojis_per_language_daily (time, language, emoji, count)
+      VALUES ($1, $2, $3, 1)
+      ON CONFLICT (time, language, emoji) DO UPDATE SET count = emojis_per_language_daily.count + 1;
+    `;
+    await client.query(upsertEmojiPerLanguageDailyText, [date, language, emoji]);
+
+    await client.query('COMMIT');
+    logger.debug(`Incremented emoji data for ${emoji} in language ${language} on ${date}`);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    logger.error(`Error incrementing emoji data for ${emoji}: ${(error as Error).message}`);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
-// Schedule periodic purging (e.g., every hour)
-const PURGE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-const PURGE_DAYS_ENV = parseInt(process.env.PURGE_DAYS || '7', 10);
+/**
+ * Retrieves the latest cursor from a separate table or a configuration source.
+ * Implement this function based on how you track cursors.
+ */
+export async function getLastCursor(): Promise<bigint> {
+  const client = await pool.connect();
+  try {
+    const res = await client.query<{ cursor: bigint }>(
+      'SELECT cursor FROM cursor_table ORDER BY updated_at DESC LIMIT 1;',
+    );
+    if (res.rows.length > 0) {
+      return res.rows[0].cursor;
+    }
+    return BigInt(0);
+  } catch (error) {
+    logger.error(`Error fetching last cursor: ${(error as Error).message}`);
+    return BigInt(0);
+  } finally {
+    client.release();
+  }
+}
 
-const purgeInterval = setInterval(() => {
-  purgeOldPosts(PURGE_DAYS_ENV);
-}, PURGE_INTERVAL_MS);
+/**
+ * Updates the latest cursor in a separate table or a configuration source.
+ * Implement this function based on how you track cursors.
+ */
+export async function updateLastCursor(cursor: bigint): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const upsertText = `
+      INSERT INTO cursor_table (cursor, updated_at)
+      VALUES ($1, NOW())
+      ON CONFLICT (id) DO UPDATE SET cursor = EXCLUDED.cursor, updated_at = EXCLUDED.updated_at;
+    `;
+    // Assuming 'cursor_table' has a single row with id = 1
+    await client.query(upsertText, [cursor]);
+  } catch (error) {
+    logger.error(`Error updating last cursor: ${(error as Error).message}`);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
-// Function to gracefully close the database
-export function closeDatabase() {
-  clearInterval(purgeInterval);
-  db.close();
-  logger.info('Database connection closed.');
+/**
+ * Closes the database pool gracefully.
+ */
+export async function closeDatabase(): Promise<void> {
+  await pool.end();
+  logger.info('Database pool has ended');
 }

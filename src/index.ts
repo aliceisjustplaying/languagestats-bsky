@@ -1,5 +1,3 @@
-// src/index.ts
-
 import WebSocket from 'ws';
 import { savePost, softDeletePost, closeDatabase, getLastCursor, updateLastCursor } from './db';
 import { updateMetrics, incrementPosts, incrementErrors, incrementUnexpectedEvent, register } from './metrics';
@@ -66,7 +64,6 @@ let reconnectAttempts = 0;
 let latestCursor = getLastCursor();
 let cursorUpdateInterval: NodeJS.Timeout | null = null;
 
-// Function to initialize cursor update interval
 function initializeCursorUpdate() {
   cursorUpdateInterval = setInterval(() => {
     if (latestCursor > 0) {
@@ -75,10 +72,6 @@ function initializeCursorUpdate() {
     }
   }, CURSOR_UPDATE_INTERVAL_MS);
 }
-
-// src/index.ts
-
-// ... [imports remain unchanged]
 
 function handleComEvent(event: any) {
   const commit = event.commit;
@@ -111,7 +104,6 @@ function handleComEvent(event: any) {
         return;
       }
       try {
-        // Parse the record
         let postRecord;
         if (typeof record === 'string') {
           postRecord = JSON.parse(record);
@@ -130,7 +122,6 @@ function handleComEvent(event: any) {
           throw new Error('Invalid or missing "createdAt" in record');
         }
 
-        // Handle "langs" field
         let langs: string[] = [];
         if ('langs' in postRecord) {
           if (Array.isArray(postRecord.langs)) {
@@ -169,7 +160,6 @@ function handleComEvent(event: any) {
         }
       } catch (error) {
         logger.error(`Error parsing record in "create" commit: ${(error as Error).message}`, { commit, record });
-        // Log the entire record for debugging
         logger.error(`Malformed record data: ${JSON.stringify(record)}`);
         incrementErrors();
       }
@@ -182,7 +172,6 @@ function handleComEvent(event: any) {
         return;
       }
       try {
-        // Parse the record
         let postRecord;
         if (typeof record === 'string') {
           postRecord = JSON.parse(record);
@@ -201,7 +190,6 @@ function handleComEvent(event: any) {
           throw new Error('Invalid or missing "createdAt" in record');
         }
 
-        // Handle "langs" field
         let langs: string[] = [];
         if ('langs' in postRecord) {
           if (Array.isArray(postRecord.langs)) {
@@ -232,7 +220,7 @@ function handleComEvent(event: any) {
           embed: postRecord.embed || null,
           reply: postRecord.reply || null,
         };
-        savePost(post); // Assuming savePost can handle both insert and update
+        savePost(post);
         updateMetrics(post.langs);
         incrementPosts();
         if (event.time_us > latestCursor) {
@@ -240,7 +228,6 @@ function handleComEvent(event: any) {
         }
       } catch (error) {
         logger.error(`Error parsing record in "update" commit: ${(error as Error).message}`, { commit, record });
-        // Log the entire record for debugging
         logger.error(`Malformed record data: ${JSON.stringify(record)}`);
         incrementErrors();
       }
@@ -315,7 +302,6 @@ function processEvent(event: any) {
   }
 }
 
-// Function to connect to Jetstream Firehose
 function connect() {
   const url = constructFirehoseURL(latestCursor);
   logger.info(`Connecting to Jetstream at ${url}...`);
@@ -324,7 +310,6 @@ function connect() {
   ws.on('open', () => {
     logger.info('Connected to Jetstream firehose.');
     reconnectAttempts = 0;
-    // Initialize cursor update interval upon successful connection
     if (!cursorUpdateInterval) {
       initializeCursorUpdate();
     }
@@ -352,7 +337,6 @@ function connect() {
   });
 }
 
-// Reconnection logic with exponential backoff
 async function attemptReconnect() {
   reconnectAttempts += 1;
   const delay = Math.min(RECONNECT_DELAY_MS * 2 ** reconnectAttempts, 30000); // Up to 30 seconds
@@ -361,10 +345,8 @@ async function attemptReconnect() {
   connect();
 }
 
-// Start initial connection
 connect();
 
-// Set up Express server for Prometheus metrics
 const app = express();
 
 app.get('/metrics', async (req, res) => {
@@ -382,7 +364,6 @@ const server = app.listen(PORT, '127.0.0.1', () => {
   logger.info(`Metrics server listening on port ${PORT}`);
 });
 
-// Graceful Shutdown
 function shutdown() {
   logger.info('Shutting down gracefully...');
   if (ws) {
@@ -397,7 +378,6 @@ function shutdown() {
     process.exit(0);
   });
 
-  // Force shutdown after 10 seconds
   setTimeout(() => {
     logger.error('Forcing shutdown.');
     process.exit(1);

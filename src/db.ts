@@ -1,15 +1,10 @@
-// src/db.ts
-
 import Database from 'better-sqlite3';
 import path from 'path';
 import logger from './logger';
 
-// Define the path for the SQLite database
 const dbPath = path.resolve(__dirname, '../data/posts.db');
 const db = new Database(dbPath);
 
-// Initialize the database schema with normalized languages and cursor management
-// Inside the db.exec() block in src/db.ts
 
 db.exec(`
   PRAGMA foreign_keys = ON;
@@ -44,7 +39,6 @@ db.exec(`
   INSERT OR IGNORE INTO cursor (id, last_cursor) VALUES (1, 0);
 `);
 
-// Prepared statements for performance
 const insertPost = db.prepare(`
   INSERT OR IGNORE INTO posts (id, created_at, did, time_us, type, collection, rkey, cursor, embed, reply)
   VALUES (@id, @created_at, @did, @time_us, @type, @collection, @rkey, @cursor, @embed, @reply)
@@ -79,24 +73,16 @@ const insertLanguage = db.prepare(`
 const getLastCursorStmt = db.prepare(`SELECT last_cursor FROM cursor WHERE id = 1`);
 const updateCursorStmt = db.prepare(`UPDATE cursor SET last_cursor = @last_cursor WHERE id = 1`);
 
-// Function to get the last cursor
 export function getLastCursor(): number {
   const row = getLastCursorStmt.get();
   return row ? row.last_cursor : 0;
 }
 
-// Function to update the last cursor
 export function updateLastCursor(newCursor: number): void {
   updateCursorStmt.run({ last_cursor: newCursor });
   logger.debug(`Updated last cursor to ${newCursor}`);
 }
 
-// Function to insert or update a post and its languages
-// src/db.ts
-
-// ... [imports and initial setup remain unchanged]
-
-// Modify the savePost function to handle nested objects
 export function savePost(post: {
   id: string;
   created_at: string;
@@ -139,7 +125,6 @@ export function savePost(post: {
   });
 
   try {
-    // Validate data types before running the transaction
     if (typeof post.id !== 'string' || post.id.trim() === '') {
       throw new Error('Invalid or missing "id"');
     }
@@ -171,11 +156,9 @@ export function savePost(post: {
     insertOrUpdate(post);
   } catch (error) {
     logger.error(`Database insertion/update error: ${(error as Error).message}`, { post });
-    // Optionally, handle specific error types or implement retries
   }
 }
 
-// Function to perform soft delete
 export function softDeletePost(postId: string, cursor: number) {
   try {
     const info = softDeletePostStmt.run({
@@ -192,7 +175,6 @@ export function softDeletePost(postId: string, cursor: number) {
   }
 }
 
-// Function to purge old posts (older than X days)
 export function purgeOldPosts(days: number) {
   const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const stmt = db.prepare(`DELETE FROM posts WHERE created_at < ? AND is_deleted = TRUE`);
@@ -208,7 +190,6 @@ const purgeInterval = setInterval(() => {
   purgeOldPosts(PURGE_DAYS_ENV);
 }, PURGE_INTERVAL_MS);
 
-// Function to gracefully close the database
 export function closeDatabase() {
   clearInterval(purgeInterval);
   db.close();

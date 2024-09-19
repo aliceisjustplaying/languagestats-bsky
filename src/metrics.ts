@@ -60,7 +60,7 @@ setInterval(() => {
   postsLastInterval = 0;
 }, 1000);
 
-export function incrementPosts(count: number = 1) {
+export function incrementPosts(count = 1) {
   postsLastInterval += count;
 }
 

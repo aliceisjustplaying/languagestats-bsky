@@ -300,7 +300,7 @@ function connect() {
   });
 
   ws.on('error', (error) => {
-    logger.error(`WebSocket error: ${(error as Error).message}`);
+    logger.error(`WebSocket error: ${error.message}`);
     incrementErrors();
     ws?.close();
   });

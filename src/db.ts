@@ -96,8 +96,8 @@ export function savePost(post: {
   collection: string;
   rkey: string;
   cursor: number;
-  embed?: any;   // Optional field
-  reply?: any;   // Optional field
+  embed?: any; // Optional field
+  reply?: any; // Optional field
 }) {
   const insertOrUpdate = db.transaction((postData: typeof post) => {
     insertPost.run({
@@ -109,8 +109,8 @@ export function savePost(post: {
       collection: postData.collection,
       rkey: postData.rkey,
       cursor: postData.cursor,
-      embed: postData.embed ? JSON.stringify(postData.embed) : null,   // Serialize embed
-      reply: postData.reply ? JSON.stringify(postData.reply) : null,   // Serialize reply
+      embed: postData.embed ? JSON.stringify(postData.embed) : null, // Serialize embed
+      reply: postData.reply ? JSON.stringify(postData.reply) : null, // Serialize reply
     });
 
     postData.langs.forEach((lang) => {

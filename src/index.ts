@@ -223,51 +223,10 @@ function handleComEvent(event: EventStream) {
   }
 }
 
-// Function to handle `"acc"` events (optional)
-function handleAccEvent(event: any) {
-  const account = event.account;
-  if (!account) {
-    logger.warn('Account field is missing in "acc" event', { event });
-    incrementUnexpectedEvent('acc', 'unknown');
-    return;
-  }
-
-  // Implement account-related logic if needed
-  // For example, update account status in the database
-  logger.info('Received "acc" event', { account });
-}
-
-// Function to handle `"id"` events (optional)
-function handleIdEvent(event: any) {
-  const identity = event.identity;
-  if (!identity) {
-    logger.warn('Identity field is missing in "id" event', { event });
-    incrementUnexpectedEvent('id', 'unknown');
-    return;
-  }
-
-  // Implement identity-related logic if needed
-  // For example, update user identity information in the database
-  logger.info('Received "id" event', { identity });
-}
-
-// Function to process incoming events
-function processEvent(event: any) {
+function processEvent(event: EventStream) {
   const eventType = event.type || 'unknown';
-  switch (eventType) {
-    case 'com':
-      handleComEvent(event);
-      break;
-    case 'acc':
-      handleAccEvent(event);
-      break;
-    case 'id':
-      handleIdEvent(event);
-      break;
-    default:
-      logger.warn(`Unhandled event type: ${eventType}`, { eventType });
-      incrementUnexpectedEvent(eventType, 'unknown');
-      break;
+  if (eventType.startsWith('com')) {
+    handleComEvent(event);
   }
 }
 

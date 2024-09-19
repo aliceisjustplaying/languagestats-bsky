@@ -9,17 +9,12 @@ import { RateLimiterMemory } from 'rate-limiter-flexible';
 
 dotenv.config();
 
-// Configuration
-const FIREHOSE_URL = process.env.FIREHOSE_URL || 'ws://localhost:8080'; // Pointing to mock server for testing
-const PORT = parseInt(process.env.PORT || '3000', 10);
-const WANTED_COLLECTIONS = process.env.WANTED_COLLECTIONS
-  ? process.env.WANTED_COLLECTIONS.split(',')
-  : ['app.bsky.feed.post'];
-const PURGE_DAYS = parseInt(process.env.PURGE_DAYS || '7', 10);
-const RECONNECT_DELAY_MS = 1000; // Initial reconnect delay in ms
-const CURSOR_UPDATE_INTERVAL_MS = 10 * 1000; // 10 seconds
+const FIREHOSE_URL = process.env.FIREHOSE_URL ?? 'wss://jetstream.atproto.tools/subscribe'; // default to Jaz's Jetstream instance
+const PORT = parseInt(process.env.PORT ?? '9201', 10);
+const WANTED_COLLECTIONS = process.env.WANTED_COLLECTIONS?.split(',') ?? ['app.bsky.feed.post'];
+const RECONNECT_DELAY_MS = 1000;
+const CURSOR_UPDATE_INTERVAL_MS = 10 * 1000;
 
-// Validate Environment Variables
 if (!FIREHOSE_URL) {
   logger.error('FIREHOSE_URL is not defined in the environment variables.');
   process.exit(1);

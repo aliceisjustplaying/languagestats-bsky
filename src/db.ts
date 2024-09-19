@@ -5,6 +5,7 @@ import logger from './logger';
 const dbPath = path.resolve(__dirname, '../data/posts.db');
 const db = new Database(dbPath);
 
+logger.info(`Initializing database schema...`);
 
 db.exec(`
   PRAGMA foreign_keys = ON;
@@ -38,6 +39,8 @@ db.exec(`
 
   INSERT OR IGNORE INTO cursor (id, last_cursor) VALUES (1, 0);
 `);
+
+logger.info(`Database schema initialized.`);
 
 const insertPost = db.prepare(`
   INSERT OR IGNORE INTO posts (id, created_at, did, time_us, type, collection, rkey, cursor, embed, reply)

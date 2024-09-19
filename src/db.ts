@@ -40,6 +40,13 @@ db.exec(`
   INSERT OR IGNORE INTO cursor (id, last_cursor) VALUES (1, 0);
 `);
 
+logger.info(`Creating index on posts(created_at, is_deleted)...`);
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_posts_created_at_is_deleted 
+  ON posts(created_at, is_deleted);
+`);
+
 logger.info(`Database schema initialized.`);
 
 const insertPost = db.prepare(`

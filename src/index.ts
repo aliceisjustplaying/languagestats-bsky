@@ -44,7 +44,7 @@ function initializeCursorUpdate() {
   }, CURSOR_UPDATE_INTERVAL_MS);
 }
 
-function handleComEvent(event: any) {
+function handleComEvent(event: EventStream) {
   const commit = event.commit;
   if (!commit) {
     logger.warn('Commit field is missing in "com" event', { event });
@@ -84,8 +84,7 @@ function handleComEvent(event: any) {
           throw new Error('Record is neither a string nor an object');
         }
 
-        // Validate postRecord fields
-        const postType = postRecord['$type'] || postRecord.type;
+        const postType = postRecord.$type || postRecord.type;
         if (typeof postType !== 'string') {
           throw new Error('Invalid or missing "$type" in record');
         }
@@ -112,16 +111,16 @@ function handleComEvent(event: any) {
 
         const post = {
           id: `${event.did}:${rkey}`,
-          created_at: postRecord.createdAt || new Date().toISOString(),
+          created_at: postRecord.createdAt ?? new Date().toISOString(),
           langs: langs,
-          did: event.did || 'unknown',
+          did: event.did ?? 'unknown',
           time_us: typeof event.time_us === 'number' ? event.time_us : Date.now() * 1000,
-          type: postType, // Assign the correct type
-          collection: collection || 'unknown',
+          type: postType,
+          collection: collection ?? 'unknown',
           rkey: rkey,
           cursor: event.time_us,
-          embed: postRecord.embed || null,   // Handle optional embed
-          reply: postRecord.reply || null,   // Handle optional reply
+          embed: postRecord.embed ?? null,
+          reply: postRecord.reply ?? null,
         };
         savePost(post);
         updateMetrics(post.langs);
@@ -152,8 +151,7 @@ function handleComEvent(event: any) {
           throw new Error('Record is neither a string nor an object');
         }
 
-        // Validate postRecord fields
-        const postType = postRecord['$type'] || postRecord.type;
+        const postType = postRecord.$type || postRecord.type;
         if (typeof postType !== 'string') {
           throw new Error('Invalid or missing "$type" in record');
         }

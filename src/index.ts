@@ -5,7 +5,6 @@ import express from 'express';
 import dotenv from 'dotenv';
 import process from 'process';
 import logger from './logger';
-import { RateLimiterMemory } from 'rate-limiter-flexible';
 
 dotenv.config();
 
@@ -20,29 +19,6 @@ if (!FIREHOSE_URL) {
   process.exit(1);
 }
 
-// Initialize Rate Limiter for Unexpected Events
-const unexpectedEventRateLimiter = new RateLimiterMemory({
-  points: 100, // 100 points
-  duration: 60, // Per 60 seconds
-});
-
-// Function to log unexpected events with rate limiting
-function logUnexpectedEvent(eventType: string, collection: string, eventId: string, did: string, rawEvent?: any) {
-  unexpectedEventRateLimiter.consume('unexpectedEvent')
-    .then(() => {
-      logger.warn({
-        message: 'Received unexpected event structure',
-        eventType,
-        collection,
-        eventId,
-        did,
-        rawEvent,
-      }, 'Received unexpected event structure');
-    })
-    .catch(() => {
-      // Rate limit exceeded: do not log
-    });
-}
 
 // Create WebSocket connection
 function constructFirehoseURL(cursor: number = 0): string {

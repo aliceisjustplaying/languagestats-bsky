@@ -1,0 +1,194 @@
+{
+  "datasource": {
+    "default": true,
+    "type": "prometheus",
+    "uid": "redacted"
+  },
+  "fieldConfig": {
+    "defaults": {
+      "custom": {
+        "drawStyle": "line",
+        "lineInterpolation": "linear",
+        "barAlignment": 0,
+        "barWidthFactor": 0.6,
+        "lineWidth": 1,
+        "fillOpacity": 75,
+        "gradientMode": "none",
+        "spanNulls": false,
+        "insertNulls": false,
+        "showPoints": "auto",
+        "pointSize": 5,
+        "stacking": {
+          "mode": "normal",
+          "group": "A"
+        },
+        "axisPlacement": "auto",
+        "axisLabel": "",
+        "axisColorMode": "text",
+        "axisBorderShow": false,
+        "scaleDistribution": {
+          "type": "linear"
+        },
+        "axisCenteredZero": false,
+        "hideFrom": {
+          "tooltip": false,
+          "viz": false,
+          "legend": false
+        },
+        "thresholdsStyle": {
+          "mode": "off"
+        }
+      },
+      "color": {
+        "mode": "palette-classic"
+      },
+      "mappings": [],
+      "thresholds": {
+        "mode": "absolute",
+        "steps": [
+          {
+            "color": "green",
+            "value": null
+          }
+        ]
+      },
+      "fieldMinMax": false,
+      "unit": "p/s"
+    },
+    "overrides": [
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "pt"
+        },
+        "properties": [
+          {
+            "id": "color",
+            "value": {
+              "fixedColor": "dark-green",
+              "mode": "fixed"
+            }
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "en"
+        },
+        "properties": [
+          {
+            "id": "color",
+            "value": {
+              "fixedColor": "dark-blue",
+              "mode": "fixed"
+            }
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "ja"
+        },
+        "properties": [
+          {
+            "id": "color",
+            "value": {
+              "fixedColor": "#ffffff",
+              "mode": "fixed"
+            }
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "de"
+        },
+        "properties": [
+          {
+            "id": "color",
+            "value": {
+              "fixedColor": "#000000",
+              "mode": "fixed"
+            }
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "UNKNOWN"
+        },
+        "properties": [
+          {
+            "id": "color",
+            "value": {
+              "fixedColor": "super-light-yellow",
+              "mode": "fixed"
+            }
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "es"
+        },
+        "properties": [
+          {
+            "id": "color",
+            "value": {
+              "fixedColor": "dark-red",
+              "mode": "fixed"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "gridPos": {
+    "h": 9,
+    "w": 17,
+    "x": 0,
+    "y": 7
+  },
+  "id": 15,
+  "options": {
+    "tooltip": {
+      "mode": "multi",
+      "sort": "desc"
+    },
+    "legend": {
+      "showLegend": true,
+      "displayMode": "table",
+      "placement": "right",
+      "calcs": ["mean"],
+      "sortBy": "Mean",
+      "sortDesc": true
+    }
+  },
+  "pluginVersion": "",
+  "targets": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "redacted"
+      },
+      "disableTextWrap": false,
+      "editorMode": "code",
+      "exemplar": false,
+      "expr": "rate(bluesky_post_languages{}[$__rate_interval])",
+      "format": "time_series",
+      "fullMetaSearch": false,
+      "includeNullMetadata": true,
+      "legendFormat": "{{language}}",
+      "range": true,
+      "refId": "A",
+      "useBackend": false
+    }
+  ],
+  "title": "Posts per Language",
+  "type": "timeseries"
+}

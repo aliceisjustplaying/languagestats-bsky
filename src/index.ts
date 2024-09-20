@@ -214,14 +214,8 @@ function shutdown() {
   server.close(() => {
     logger.info('HTTP server closed.');
 
-    closeDatabase()
-      .then(() => {
-        process.exit(0);
-      })
-      .catch((error: unknown) => {
-        logger.error(`Error closing database: ${(error as Error).message}`);
-        process.exit(1);
-      });
+    closeDatabase();
+    process.exit(0);
   });
 
   setTimeout(() => {

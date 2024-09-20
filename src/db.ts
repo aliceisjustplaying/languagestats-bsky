@@ -121,34 +121,6 @@ export function savePost(post: {
   });
 
   try {
-    if (typeof post.id !== 'string' || post.id.trim() === '') {
-      throw new Error('Invalid or missing "id"');
-    }
-    if (typeof post.created_at !== 'string') {
-      throw new Error('Invalid "created_at"');
-    }
-    if (!Array.isArray(post.langs)) {
-      throw new Error('Invalid "langs"');
-    }
-    if (typeof post.did !== 'string') {
-      throw new Error('Invalid "did"');
-    }
-    if (typeof post.time_us !== 'number') {
-      throw new Error('Invalid "time_us"');
-    }
-    if (typeof post.type !== 'string') {
-      throw new Error('Invalid "type"');
-    }
-    if (typeof post.collection !== 'string') {
-      throw new Error('Invalid "collection"');
-    }
-    if (typeof post.rkey !== 'string') {
-      throw new Error('Invalid "rkey"');
-    }
-    if (typeof post.cursor !== 'number') {
-      throw new Error('Invalid "cursor"');
-    }
-
     insertOrUpdate(post);
   } catch (error) {
     logger.error(`Database insertion/update error: ${(error as Error).message}`, { post });
@@ -176,53 +148,12 @@ export function deletePost(postId: string): string[] {
     return [];
   }
 }
-export function purgeSoftDeletedPosts(days: number) {
-  const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  const deleteStmt = db.prepare(`DELETE FROM posts WHERE created_at < ? AND is_deleted = TRUE LIMIT ?`);
-  const BATCH_SIZE = 1000;
 
-  const purge = db.transaction(() => {
-    let changes;
-    do {
-      changes = deleteStmt.run(cutoffDate, BATCH_SIZE).changes;
-      if (changes > 0) {
-        logger.info(`Purged ${changes} soft-deleted posts older than ${days} days.`);
-      }
-    } while (changes === BATCH_SIZE);
-  });
-
+export function closeDatabase() {
   try {
-    db.pragma('synchronous = OFF');
-    db.pragma('journal_mode = MEMORY');
-
-    purge();
+    db.close();
+    logger.info('Database connection closed.');
   } catch (error) {
-    logger.error(`Error purging old posts: ${(error as Error).message}`);
-  } finally {
-    try {
-      db.pragma('synchronous = NORMAL');
-      db.pragma('journal_mode = WAL;');
-    } catch (restoreError) {
-      logger.error(`Error restoring PRAGMA settings: ${(restoreError as Error).message}`);
-    }
+    logger.error(`Error closing database: ${(error as Error).message}`);
   }
-}
-const PURGE_DAYS_ENV = parseInt(process.env.PURGE_DAYS ?? '7', 10);
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const purgeJob = schedule.scheduleJob('15 6 * * *', () => {
-  purgeSoftDeletedPosts(PURGE_DAYS_ENV);
-  logger.info(`Scheduled purge job executed at ${new Date().toISOString()}`);
-});
-
-export function closeDatabase(): Promise<void> {
-  return schedule
-    .gracefulShutdown()
-    .then(() => {
-      db.close();
-      logger.info('Database connection closed.');
-    })
-    .catch((error: unknown) => {
-      logger.error(`Error closing database: ${(error as Error).message}`);
-    });
 }

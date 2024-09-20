@@ -10,7 +10,6 @@ import {
   decrementPosts,
   incrementErrors,
   incrementPosts,
-  incrementUnexpectedEvent,
   register,
   updateMetrics,
 } from './metrics';

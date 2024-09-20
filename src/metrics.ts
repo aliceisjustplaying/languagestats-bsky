@@ -17,9 +17,21 @@ export const totalPosts = new Counter({
   registers: [register],
 });
 
+export const deletedPosts = new Counter({
+  name: 'bluesky_deleted_posts',
+  help: 'Number of deleted posts',
+  registers: [register],
+});
+
 export const postsPerSecond = new Gauge({
   name: 'bluesky_posts_per_second',
   help: 'Number of posts processed per second',
+  registers: [register],
+});
+
+export const deletedPostsPerSecond = new Gauge({
+  name: 'bluesky_deleted_posts_per_second',
+  help: 'Number of deleted posts processed per second',
   registers: [register],
 });
 
@@ -38,12 +50,8 @@ export const unexpectedEventCounter = new Counter({
 
 const languageCounts: Record<string, number> = {};
 
-export function updateMetrics(langs: Set<string>) {
+export function incrementMetrics(langs: Set<string>) {
   langs.forEach((lang) => {
-    if (typeof lang !== 'string') {
-      logger.warn(`Invalid language type encountered: ${typeof lang}`, { lang });
-      return;
-    }
     if (languageCounts[lang]) {
       languageCounts[lang] += 1;
     } else {
@@ -61,12 +69,18 @@ setInterval(() => {
   postsLastInterval = 0;
 }, 1000);
 
+let deletedPostsLastInterval = 0;
+setInterval(() => {
+  deletedPostsPerSecond.set(deletedPostsLastInterval);
+  deletedPostsLastInterval = 0;
+}, 1000);
+
 export function incrementPosts(count = 1) {
   postsLastInterval += count;
 }
 
 export function decrementPosts(count = 1) {
-  postsLastInterval -= count;
+  deletedPostsLastInterval += count;
 }
 
 export function incrementErrors() {
@@ -79,17 +93,15 @@ export function incrementUnexpectedEvent(eventType: string, collection: string) 
 
 export function decrementMetrics(langs: string[]) {
   langs.forEach((lang) => {
-    if (languageCounts[lang]) {
+    if (languageCounts[lang] && languageCounts[lang] > 0) {
       languageCounts[lang] -= 1;
-      if (languageCounts[lang] <= 0) {
-        delete languageCounts.lang;
-        languageGauge.remove({ language: lang });
-      } else {
-        languageGauge.set({ language: lang }, languageCounts[lang]);
-      }
+      languageGauge.set({ language: lang }, languageCounts[lang]);
     } else {
       logger.warn(`Language count for "${lang}" is already zero or does not exist`);
     }
   });
+
+  deletedPosts.inc(1);
 }
+
 export { register };

@@ -5,14 +5,7 @@ import WebSocket from 'ws';
 
 import { closeDatabase, deletePost, getLastCursor, savePost, updateLastCursor } from './db';
 import logger from './logger';
-import {
-  decrementMetrics,
-  decrementPosts,
-  incrementErrors,
-  incrementPosts,
-  register,
-  updateMetrics,
-} from './metrics';
+import { decrementMetrics, decrementPosts, incrementErrors, incrementPosts, register, updateMetrics } from './metrics';
 import { JetstreamEvent } from './types';
 
 dotenv.config();

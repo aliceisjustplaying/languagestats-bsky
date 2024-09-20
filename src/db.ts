@@ -1,5 +1,4 @@
 import Database from 'better-sqlite3';
-import schedule from 'node-schedule';
 import path from 'path';
 
 import logger from './logger';

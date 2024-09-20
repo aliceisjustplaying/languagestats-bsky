@@ -1,3 +1,5 @@
+import { Record as BskyFeedPostRecord } from '@atproto/bsky/src/lexicon/types/app/bsky/feed/post';
+
 export type EventType = 'com' | 'acc' | 'id';
 export type CommitOpType = 'c' | 'u' | 'd';
 
@@ -12,7 +14,7 @@ export interface JetstreamCommit {
   collection?: string;
   rkey?: string;
   cid?: string;
-  record?: string; // BskyFeedPostRecord in JSON format
+  record?: BskyFeedPostRecord;
 }
 
 export interface JetstreamEvent {

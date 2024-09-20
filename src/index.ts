@@ -1,4 +1,3 @@
-import { Record as BskyFeedPostRecord } from '@atproto/bsky/src/lexicon/types/app/bsky/feed/post';
 import dotenv from 'dotenv';
 import express from 'express';
 import process from 'process';
@@ -69,7 +68,7 @@ function handleCommitEvent(event: JetstreamEvent) {
   switch (type) {
     case 'c': // Create
       try {
-        const postRecord = JSON.parse(record) as BskyFeedPostRecord;
+        const postRecord = record;
 
         let langs: string[] = [];
         if (postRecord.langs) {

@@ -88,7 +88,7 @@ function handleCommitEvent(event: JetstreamEvent) {
           //   langs = ['UNKNOWN'];
           // }
         } else {
-          logger.warn(`"langs" field is missing in record`, { postRecord });
+          logger.warn(`"langs" field is missing in record ${JSON.stringify(record)}`);
           langs = ['UNKNOWN'];
         }
 
@@ -134,8 +134,7 @@ function handleCommitEvent(event: JetstreamEvent) {
       break;
 
     default:
-      logger.warn(`Unhandled commit type (this should never happen): ${type}`, { type });
-      incrementUnexpectedEvent('com', collection);
+      // there are 'u' update events, but posts don't get updated
       break;
   }
 }

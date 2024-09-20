@@ -38,7 +38,7 @@ export const unexpectedEventCounter = new Counter({
 
 const languageCounts: Record<string, number> = {};
 
-export function updateMetrics(langs: string[]) {
+export function updateMetrics(langs: Set<string>) {
   langs.forEach((lang) => {
     if (typeof lang !== 'string') {
       logger.warn(`Invalid language type encountered: ${typeof lang}`, { lang });

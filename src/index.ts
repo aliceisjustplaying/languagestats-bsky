@@ -34,12 +34,12 @@ function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
   const { rkey, record } = commit;
 
   try {
-    let langs: string[] = [];
+    let langs = new Set<string>();
     if (record.langs) {
-      langs = record.langs;
+      langs = new Set(record.langs.map((lang) => lang.split('-')[0].toLowerCase()));
     } else {
       logger.debug(`"langs" field is missing in record ${JSON.stringify(record)}`);
-      langs = ['UNKNOWN'];
+      langs.add('UNKNOWN');
     }
 
     const post = {

@@ -70,7 +70,9 @@ export function getLastCursor(): number {
 }
 
 export function updateLastCursor(newCursor: number): void {
-  const result = db.prepare(`UPDATE cursor SET last_cursor = @last_cursor WHERE id = 1`).run({ last_cursor: newCursor });
+  const result = db
+    .prepare(`UPDATE cursor SET last_cursor = @last_cursor WHERE id = 1`)
+    .run({ last_cursor: newCursor });
   if (result.changes > 0) {
     logger.info(`Updated last cursor to ${newCursor}`);
   } else {
@@ -80,7 +82,7 @@ export function updateLastCursor(newCursor: number): void {
 export function savePost(post: {
   id: string;
   created_at: string;
-  langs: string[];
+  langs: Set<string>;
   did: string;
   rkey: string;
   cursor: number;
@@ -126,7 +128,7 @@ export function deletePost(postId: string): string[] {
       logger.info(`Deleted post ${postId}`);
       return postLangs;
     } else {
-      logger.warn(`Attempted to delete non-existent post ${postId}`);
+      logger.info(`Attempted to delete non-existent post ${postId}`);
       return [];
     }
   } catch (error) {

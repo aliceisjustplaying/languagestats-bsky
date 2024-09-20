@@ -1,7 +1,11 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-import logger from './logger';
+import logger from './logger.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const dbPath = path.resolve(__dirname, '../data/posts.db');
 const db = new Database(dbPath);
@@ -15,14 +19,9 @@ db.exec(`
     id TEXT PRIMARY KEY,
     created_at TEXT,
     did TEXT,
-    time_us INTEGER,
-    type TEXT,
-    collection TEXT,
     rkey TEXT,
     cursor INTEGER,
-    is_deleted BOOLEAN DEFAULT FALSE,
-    embed TEXT,    -- Serialized embed data
-    reply TEXT     -- Serialized reply data
+    text TEXT
   );
 
   CREATE TABLE IF NOT EXISTS languages (
@@ -37,16 +36,11 @@ db.exec(`
     id INTEGER PRIMARY KEY CHECK (id = 1),
     last_cursor INTEGER
   );
-
-  INSERT OR IGNORE INTO cursor (id, last_cursor) VALUES (1, 0);
 `);
 
-logger.info(`Creating index on posts(created_at, is_deleted)...`);
+const currentEpochMicroseconds = BigInt(Date.now()) * 1000n;
 
-db.exec(`
-  CREATE INDEX IF NOT EXISTS idx_posts_created_at_is_deleted 
-  ON posts(created_at, is_deleted);
-`);
+db.exec(`INSERT OR IGNORE INTO cursor (id, last_cursor) VALUES (1, ${currentEpochMicroseconds});`);
 
 logger.info(`Setting database pragmas...`);
 
@@ -59,8 +53,8 @@ db.pragma('locking_mode = NORMAL'); // Allows better concurrency
 logger.info(`Database schema initialized.`);
 
 const insertPost = db.prepare(`
-  INSERT OR IGNORE INTO posts (id, created_at, did, time_us, type, collection, rkey, cursor, embed, reply)
-  VALUES (@id, @created_at, @did, @time_us, @type, @collection, @rkey, @cursor, @embed, @reply)
+  INSERT OR IGNORE INTO posts (id, created_at, did, rkey, cursor, text)
+  VALUES (@id, @created_at, @did, @rkey, @cursor, @text)
 `);
 
 const insertLanguage = db.prepare(`
@@ -69,51 +63,44 @@ const insertLanguage = db.prepare(`
 `);
 
 export function getLastCursor(): number {
+  logger.info('Getting last cursor...');
   const row = db.prepare(`SELECT last_cursor FROM cursor WHERE id = 1`).get();
-  return row ? row.last_cursor : 0;
+  logger.info(`Returning cursor from database: ${row.last_cursor}`);
+  return row.last_cursor;
 }
 
 export function updateLastCursor(newCursor: number): void {
-  db.prepare(`UPDATE cursor SET last_cursor = @last_cursor WHERE id = 1`).run({ last_cursor: newCursor });
-  logger.debug(`Updated last cursor to ${newCursor}`);
+  const result = db.prepare(`UPDATE cursor SET last_cursor = @last_cursor WHERE id = 1`).run({ last_cursor: newCursor });
+  if (result.changes > 0) {
+    logger.info(`Updated last cursor to ${newCursor}`);
+  } else {
+    logger.warn(`Failed to update cursor to ${newCursor}`);
+  }
 }
-
 export function savePost(post: {
   id: string;
   created_at: string;
   langs: string[];
   did: string;
-  time_us: number;
-  type: string;
-  collection: string;
   rkey: string;
   cursor: number;
-  embed?: any; // Optional field
-  reply?: any; // Optional field
+  text: string;
 }) {
   const insertOrUpdate = db.transaction((postData: typeof post) => {
     insertPost.run({
       id: postData.id,
       created_at: postData.created_at,
       did: postData.did,
-      time_us: postData.time_us,
-      type: postData.type,
-      collection: postData.collection,
       rkey: postData.rkey,
       cursor: postData.cursor,
-      embed: postData.embed ? JSON.stringify(postData.embed) : null, // Serialize embed
-      reply: postData.reply ? JSON.stringify(postData.reply) : null, // Serialize reply
+      text: postData.text,
     });
 
     postData.langs.forEach((lang) => {
-      if (typeof lang === 'string') {
-        insertLanguage.run({
-          post_id: postData.id,
-          language: lang,
-        });
-      } else {
-        logger.warn(`Invalid language type: ${typeof lang} for lang: ${lang}`, { lang });
-      }
+      insertLanguage.run({
+        post_id: postData.id,
+        language: lang,
+      });
     });
 
     logger.debug(`Saved/Updated post ${postData.id}`);
@@ -136,7 +123,7 @@ export function deletePost(postId: string): string[] {
     const info = db.prepare(`DELETE FROM posts WHERE id = @id`).run({ id: postId });
 
     if (info.changes > 0) {
-      logger.debug(`Hard deleted post ${postId}`);
+      logger.info(`Deleted post ${postId}`);
       return postLangs;
     } else {
       logger.warn(`Attempted to delete non-existent post ${postId}`);

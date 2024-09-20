@@ -1,8 +1,9 @@
 {
-  "name": "bluesky-firehose-consumer",
+  "name": "languagestats-bsky",
   "version": "1.0.0",
-  "description": "Consumes Bluesky firehose, processes posts, and exposes metrics for Prometheus.",
-  "main": "dist/index.js",
+  "description": "Consumes posts from Jetstream and and exposes language metrics for Prometheus.",
+  "main": "src/index.ts",
+  "type": "module",
   "scripts": {
     "start": "npx tsx src/index.ts",
     "dev": "npx tsx --watch src/index.ts",
@@ -11,34 +12,29 @@
     "lint:fix": "npx eslint --fix ."
   },
   "dependencies": {
-    "@atproto/bsky": "^0.0.83",
-    "@atproto/lexicon": "^0.4.1",
-    "@atproto/xrpc-server": "^0.6.4",
+    "@skyware/jetstream": "^0.1.3",
     "better-sqlite3": "^11.3.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
-    "node-schedule": "^2.1.1",
     "pino": "^9.4.0",
     "pino-pretty": "^11.2.2",
-    "prom-client": "^15.1.3",
-    "ws": "^8.18.0"
+    "prom-client": "^15.1.3"
   },
   "devDependencies": {
-    "@eslint/js": "^9.10.0",
+    "@eslint/js": "^9.11.0",
     "@trivago/prettier-plugin-sort-imports": "^4.3.0",
     "@types/better-sqlite3": "^7.6.11",
     "@types/eslint__js": "^8.42.3",
     "@types/express": "^4.17.21",
     "@types/node": "^20.16.5",
     "@types/node-schedule": "^2.1.7",
-    "@types/ws": "^8.5.12",
-    "eslint": "^9.10.0",
+    "eslint": "^9.11.0",
     "prettier": "^3.3.3",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2",
     "typescript-eslint": "^8.6.0"
   },
-  "author": "Your Name",
+  "author": "alice",
   "license": "MIT",
   "packageManager": "pnpm@9.10.0+sha512.73a29afa36a0d092ece5271de5177ecbf8318d454ecd701343131b8ebc0c1a91c487da46ab77c8e596d6acf1461e3594ced4becedf8921b074fbd8653ed7051c"
 }

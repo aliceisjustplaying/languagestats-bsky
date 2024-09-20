@@ -1,6 +1,6 @@
 import { Counter, Gauge, Registry } from 'prom-client';
 
-import logger from './logger';
+import logger from './logger.js';
 
 const register = new Registry();
 

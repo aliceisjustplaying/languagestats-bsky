@@ -68,42 +68,26 @@ function handleCommitEvent(event: JetstreamEvent) {
   switch (type) {
     case 'c': // Create
       try {
-        const postRecord = record;
-
         let langs: string[] = [];
-        if (postRecord.langs) {
-          langs = postRecord.langs;
-
-          // we should not need to do this
-          // if we do, something is seriously messed up
-          //
-          // if (Array.isArray(postRecord.langs)) {
-          //   langs = postRecord.langs.filter((lang: string) => typeof lang === 'string');
-          //   if (langs.length === 0) {
-          //     logger.warn(`"langs" array is empty or contains no valid strings in record`, { record });
-          //     langs = ['UNKNOWN'];
-          //   }
-          // } else {
-          //   logger.warn(`"langs" field is not an array in record`, { record });
-          //   langs = ['UNKNOWN'];
-          // }
+        if (record.langs) {
+          langs = record.langs;
         } else {
-          logger.warn(`"langs" field is missing in record ${JSON.stringify(record)}`);
+          logger.debug(`"langs" field is missing in record ${JSON.stringify(record)}`);
           langs = ['UNKNOWN'];
         }
 
         const post = {
           id: `${event.did}:${rkey}`,
-          created_at: postRecord.createdAt,
+          created_at: record.createdAt,
           langs: langs,
           did: event.did,
           time_us: typeof event.time_us === 'number' ? event.time_us : Date.now() * 1000,
-          type: type, // this was previously wrong and stored the collection name. also we probably don't need it, and will drop it
+          type: type, // this was previously wrong and stored the collection name. also we don't need it and may drop it
           collection: collection,
           rkey: rkey,
           cursor: event.time_us,
-          embed: postRecord.embed ?? null,
-          reply: postRecord.reply ?? null,
+          embed: record.embed ?? null,
+          reply: record.reply ?? null,
         };
         savePost(post);
         updateMetrics(post.langs);

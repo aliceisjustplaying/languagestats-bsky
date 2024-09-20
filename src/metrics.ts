@@ -1,4 +1,5 @@
-import { Registry, Gauge, Counter } from 'prom-client';
+import { Counter, Gauge, Registry } from 'prom-client';
+
 import logger from './logger';
 
 const register = new Registry();
@@ -64,6 +65,10 @@ export function incrementPosts(count = 1) {
   postsLastInterval += count;
 }
 
+export function decrementPosts(count = 1) {
+  postsLastInterval -= count;
+}
+
 export function incrementErrors() {
   errorCounter.inc();
 }
@@ -72,4 +77,19 @@ export function incrementUnexpectedEvent(eventType: string, collection: string) 
   unexpectedEventCounter.inc({ event_type: eventType, collection });
 }
 
+export function decrementMetrics(langs: string[]) {
+  langs.forEach((lang) => {
+    if (languageCounts[lang]) {
+      languageCounts[lang] -= 1;
+      if (languageCounts[lang] <= 0) {
+        delete languageCounts.lang;
+        languageGauge.remove({ language: lang });
+      } else {
+        languageGauge.set({ language: lang }, languageCounts[lang]);
+      }
+    } else {
+      logger.warn(`Language count for "${lang}" is already zero or does not exist`);
+    }
+  });
+}
 export { register };

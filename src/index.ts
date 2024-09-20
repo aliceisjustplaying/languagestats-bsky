@@ -1,10 +1,21 @@
-import WebSocket from 'ws';
-import { savePost, softDeletePost, closeDatabase, getLastCursor, updateLastCursor } from './db';
-import { updateMetrics, incrementPosts, incrementErrors, incrementUnexpectedEvent, register } from './metrics';
-import express from 'express';
+import { Record as BskyFeedPostRecord } from '@atproto/bsky/src/lexicon/types/app/bsky/feed/post';
 import dotenv from 'dotenv';
+import express from 'express';
 import process from 'process';
+import WebSocket from 'ws';
+
+import { closeDatabase, deletePost, getLastCursor, savePost, updateLastCursor } from './db';
 import logger from './logger';
+import {
+  decrementMetrics,
+  decrementPosts,
+  incrementErrors,
+  incrementPosts,
+  incrementUnexpectedEvent,
+  register,
+  updateMetrics,
+} from './metrics';
+import { JetstreamEvent } from './types';
 
 dotenv.config();
 
@@ -19,11 +30,11 @@ if (!FIREHOSE_URL) {
   process.exit(1);
 }
 
-
-// Create WebSocket connection
-function constructFirehoseURL(cursor: number = 0): string {
+function constructFirehoseURL(cursor = 0): string {
   const url = new URL(FIREHOSE_URL);
-  WANTED_COLLECTIONS.forEach((collection) => url.searchParams.append('wantedCollections', collection));
+  WANTED_COLLECTIONS.forEach((collection) => {
+    url.searchParams.append('wantedCollections', collection);
+  });
   if (cursor > 0) {
     url.searchParams.append('cursor', cursor.toString());
   }
@@ -39,84 +50,57 @@ function initializeCursorUpdate() {
   cursorUpdateInterval = setInterval(() => {
     if (latestCursor > 0) {
       updateLastCursor(latestCursor);
-      logger.debug(`Cursor updated to ${latestCursor} at ${new Date().toISOString()}`);
+      logger.info(`Cursor updated to ${latestCursor} at ${new Date().toISOString()}`);
     }
   }, CURSOR_UPDATE_INTERVAL_MS);
 }
 
-function handleComEvent(event: EventStream) {
-  const commit = event.commit;
-  if (!commit) {
-    logger.warn('Commit field is missing in "com" event', { event });
-    incrementUnexpectedEvent('com', 'unknown');
+function handleCommitEvent(event: JetstreamEvent) {
+  const { commit } = event;
+
+  if (!commit) return;
+
+  if (!commit.collection || !commit.rkey || !commit.record) {
     return;
   }
 
-  const { type: opType, collection, rkey, record } = commit;
+  const { type, collection, rkey, record } = commit;
 
-  if (collection !== 'app.bsky.feed.post') {
-    // Handle other collections if needed
-    logger.warn(`Unhandled collection: ${collection}`, { collection });
-    incrementUnexpectedEvent('com', collection);
-    return;
-  }
-
-  if (!rkey) {
-    logger.warn('RKey is missing in "com" event commit', { commit });
-    incrementUnexpectedEvent('com', collection);
-    return;
-  }
-
-  switch (opType) {
+  switch (type) {
     case 'c': // Create
-      if (!record) {
-        logger.warn('Record is missing in "create" commit', { commit });
-        incrementUnexpectedEvent('com', collection);
-        return;
-      }
       try {
-        let postRecord;
-        if (typeof record === 'string') {
-          postRecord = JSON.parse(record);
-        } else if (typeof record === 'object') {
-          postRecord = record;
-        } else {
-          throw new Error('Record is neither a string nor an object');
-        }
-
-        const postType = postRecord.$type || postRecord.type;
-        if (typeof postType !== 'string') {
-          throw new Error('Invalid or missing "$type" in record');
-        }
-        if (typeof postRecord.createdAt !== 'string') {
-          throw new Error('Invalid or missing "createdAt" in record');
-        }
+        const postRecord = JSON.parse(record) as BskyFeedPostRecord;
 
         let langs: string[] = [];
-        if ('langs' in postRecord) {
-          if (Array.isArray(postRecord.langs)) {
-            langs = postRecord.langs.filter((lang: any) => typeof lang === 'string');
-            if (langs.length === 0) {
-              logger.warn(`"langs" array is empty or contains no valid strings in record`, { record });
-              langs = ['UNKNOWN'];
-            }
-          } else {
-            logger.warn(`"langs" field is not an array in record`, { record });
-            langs = ['UNKNOWN'];
-          }
+        if (postRecord.langs) {
+          langs = postRecord.langs;
+
+          // we should not need to do this
+          // if we do, something is seriously messed up
+          //
+          // if (Array.isArray(postRecord.langs)) {
+          //   langs = postRecord.langs.filter((lang: string) => typeof lang === 'string');
+          //   if (langs.length === 0) {
+          //     logger.warn(`"langs" array is empty or contains no valid strings in record`, { record });
+          //     langs = ['UNKNOWN'];
+          //   }
+          // } else {
+          //   logger.warn(`"langs" field is not an array in record`, { record });
+          //   langs = ['UNKNOWN'];
+          // }
         } else {
-          logger.warn(`"langs" field is missing in record`, { record });
+          logger.warn(`"langs" field is missing in record`, { postRecord });
           langs = ['UNKNOWN'];
         }
 
         const post = {
           id: `${event.did}:${rkey}`,
-          created_at: postRecord.createdAt ?? new Date().toISOString(),
+          created_at: postRecord.createdAt,
           langs: langs,
-          did: event.did ?? 'unknown',
+          did: event.did,
           time_us: typeof event.time_us === 'number' ? event.time_us : Date.now() * 1000,
-          type: postType,
-          collection: collection ?? 'unknown',
+          type: type, // this was previously wrong and stored the collection name. also we probably don't need it, and will drop it
+          collection: collection,
           rkey: rkey,
           cursor: event.time_us,
           embed: postRecord.embed ?? null,
@@ -135,78 +119,12 @@ function handleComEvent(event: EventStream) {
       }
       break;
 
-    case 'u': // Update
-      if (!record) {
-        logger.warn('Record is missing in "update" commit', { commit });
-        incrementUnexpectedEvent('com', collection);
-        return;
-      }
-      try {
-        let postRecord;
-        if (typeof record === 'string') {
-          postRecord = JSON.parse(record);
-        } else if (typeof record === 'object') {
-          postRecord = record;
-        } else {
-          throw new Error('Record is neither a string nor an object');
-        }
-
-        const postType = postRecord.$type || postRecord.type;
-        if (typeof postType !== 'string') {
-          throw new Error('Invalid or missing "$type" in record');
-        }
-        if (typeof postRecord.createdAt !== 'string') {
-          throw new Error('Invalid or missing "createdAt" in record');
-        }
-
-        let langs: string[] = [];
-        if ('langs' in postRecord) {
-          if (Array.isArray(postRecord.langs)) {
-            langs = postRecord.langs.filter((lang: any) => typeof lang === 'string');
-            if (langs.length === 0) {
-              logger.warn(`"langs" array is empty or contains no valid strings in record`, { record });
-              langs = ['UNKNOWN'];
-            }
-          } else {
-            logger.warn(`"langs" field is not an array in record`, { record });
-            langs = ['UNKNOWN'];
-          }
-        } else {
-          logger.warn(`"langs" field is missing in record`, { record });
-          langs = ['UNKNOWN'];
-        }
-
-        const post = {
-          id: `${event.did}:${rkey}`,
-          created_at: postRecord.createdAt || new Date().toISOString(),
-          langs: langs,
-          did: event.did || 'unknown',
-          time_us: typeof event.time_us === 'number' ? event.time_us : Date.now() * 1000,
-          type: postType,
-          collection: collection || 'unknown',
-          rkey: rkey,
-          cursor: event.time_us,
-          embed: postRecord.embed || null,
-          reply: postRecord.reply || null,
-        };
-        savePost(post);
-        updateMetrics(post.langs);
-        incrementPosts();
-        if (event.time_us > latestCursor) {
-          latestCursor = event.time_us;
-        }
-      } catch (error) {
-        logger.error(`Error parsing record in "update" commit: ${(error as Error).message}`, { commit, record });
-        logger.error(`Malformed record data: ${JSON.stringify(record)}`);
-        incrementErrors();
-      }
-      break;
-
     case 'd': // Delete
       try {
         const postId = `${event.did}:${rkey}`;
-        softDeletePost(postId, event.time_us);
-        // Optionally, update metrics or handle language counts
+        const langsToDecrement = deletePost(postId);
+        decrementMetrics(langsToDecrement);
+        decrementPosts();
         if (event.time_us > latestCursor) {
           latestCursor = event.time_us;
         }
@@ -217,22 +135,15 @@ function handleComEvent(event: EventStream) {
       break;
 
     default:
-      logger.warn(`Unhandled commit type: ${opType}`, { opType });
+      logger.warn(`Unhandled commit type (this should never happen): ${type}`, { type });
       incrementUnexpectedEvent('com', collection);
       break;
   }
 }
 
-function processEvent(event: EventStream) {
-  const eventType = event.type || 'unknown';
-  if (eventType.startsWith('com')) {
-    handleComEvent(event);
-  }
-}
-
 function connect() {
   const url = constructFirehoseURL(latestCursor);
-  logger.info(`Connecting to Jetstream at ${url}...`);
+  logger.info(`Connecting to Jetstream at ${url}`);
   ws = new WebSocket(url);
 
   ws.on('open', () => {
@@ -243,10 +154,16 @@ function connect() {
     }
   });
 
-  ws.on('message', (data: WebSocket.Data) => {
+  ws.on('message', (data: WebSocket.RawData) => {
     try {
-      const event = JSON.parse(data.toString());
-      processEvent(event);
+      if (data instanceof Buffer) {
+        const event: JetstreamEvent = JSON.parse(data.toString()) as JetstreamEvent;
+        if (event.type === 'com') {
+          handleCommitEvent(event);
+        }
+      } else {
+        logger.error('Received non-buffer data, this should not happen');
+      }
     } catch (error) {
       logger.error(`Error processing message: ${(error as Error).message}`);
       incrementErrors();
@@ -255,7 +172,14 @@ function connect() {
 
   ws.on('close', (code, reason) => {
     logger.warn(`WebSocket closed: Code=${code}, Reason=${reason.toString()}`);
-    attemptReconnect();
+    attemptReconnect()
+      .then(() => {
+        logger.info('Reconnected to Jetstream firehose.');
+      })
+      .catch((error: unknown) => {
+        logger.error(`Error reconnecting to Jetstream firehose: ${(error as Error).message}`);
+        incrementErrors();
+      });
   });
 
   ws.on('error', (error) => {
@@ -277,15 +201,17 @@ connect();
 
 const app = express();
 
-app.get('/metrics', async (req, res) => {
-  try {
-    res.set('Content-Type', register.contentType);
-    const metrics = await register.metrics();
-    res.send(metrics);
-  } catch (ex) {
-    logger.error(`Error serving metrics: ${(ex as Error).message}`);
-    res.status(500).end(ex.toString());
-  }
+app.get('/metrics', (req, res) => {
+  register
+    .metrics()
+    .then((metrics) => {
+      res.set('Content-Type', register.contentType);
+      res.send(metrics);
+    })
+    .catch((ex: unknown) => {
+      logger.error(`Error serving metrics: ${(ex as Error).message}`);
+      res.status(500).end((ex as Error).message);
+    });
 });
 
 const server = app.listen(PORT, '127.0.0.1', () => {
@@ -294,22 +220,32 @@ const server = app.listen(PORT, '127.0.0.1', () => {
 
 function shutdown() {
   logger.info('Shutting down gracefully...');
+
   if (ws) {
     ws.close();
   }
+
   if (cursorUpdateInterval) {
     clearInterval(cursorUpdateInterval);
   }
+
   server.close(() => {
     logger.info('HTTP server closed.');
-    closeDatabase();
-    process.exit(0);
+
+    closeDatabase()
+      .then(() => {
+        process.exit(0);
+      })
+      .catch((error: unknown) => {
+        logger.error(`Error closing database: ${(error as Error).message}`);
+        process.exit(1);
+      });
   });
 
   setTimeout(() => {
     logger.error('Forcing shutdown.');
     process.exit(1);
-  }, 10000);
+  }, 60000);
 }
 
 process.on('SIGINT', shutdown);

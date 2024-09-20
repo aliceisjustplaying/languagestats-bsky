@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3';
+import schedule from 'node-schedule';
 import path from 'path';
+
 import logger from './logger';
 
 const dbPath = path.resolve(__dirname, '../data/posts.db');
@@ -47,6 +49,14 @@ db.exec(`
   ON posts(created_at, is_deleted);
 `);
 
+logger.info(`Setting database pragmas...`);
+
+db.pragma('journal_mode = WAL'); // Better write concurrency
+db.pragma('synchronous = NORMAL'); // Balances performance with durability
+db.pragma('cache_size = -524288'); // Adjust based on system memory (512MB)
+db.pragma('temp_store = MEMORY'); // Store temporary data in memory for better performance
+db.pragma('locking_mode = NORMAL'); // Allows better concurrency
+
 logger.info(`Database schema initialized.`);
 
 const insertPost = db.prepare(`
@@ -54,42 +64,18 @@ const insertPost = db.prepare(`
   VALUES (@id, @created_at, @did, @time_us, @type, @collection, @rkey, @cursor, @embed, @reply)
 `);
 
-const updatePost = db.prepare(`
-  UPDATE posts
-  SET created_at = @created_at,
-      did = @did,
-      time_us = @time_us,
-      type = @type,
-      collection = @collection,
-      rkey = @rkey,
-      cursor = @cursor,
-      is_deleted = @is_deleted,
-      embed = @embed,
-      reply = @reply
-  WHERE id = @id
-`);
-
-const softDeletePostStmt = db.prepare(`
-  UPDATE posts
-  SET is_deleted = TRUE, cursor = @cursor
-  WHERE id = @id
-`);
-
 const insertLanguage = db.prepare(`
   INSERT INTO languages (post_id, language)
   VALUES (@post_id, @language)
 `);
 
-const getLastCursorStmt = db.prepare(`SELECT last_cursor FROM cursor WHERE id = 1`);
-const updateCursorStmt = db.prepare(`UPDATE cursor SET last_cursor = @last_cursor WHERE id = 1`);
-
 export function getLastCursor(): number {
-  const row = getLastCursorStmt.get();
+  const row = db.prepare(`SELECT last_cursor FROM cursor WHERE id = 1`).get();
   return row ? row.last_cursor : 0;
 }
 
 export function updateLastCursor(newCursor: number): void {
-  updateCursorStmt.run({ last_cursor: newCursor });
+  db.prepare(`UPDATE cursor SET last_cursor = @last_cursor WHERE id = 1`).run({ last_cursor: newCursor });
   logger.debug(`Updated last cursor to ${newCursor}`);
 }
 
@@ -169,39 +155,74 @@ export function savePost(post: {
   }
 }
 
-export function softDeletePost(postId: string, cursor: number) {
+export function deletePost(postId: string): string[] {
   try {
-    const info = softDeletePostStmt.run({
-      id: postId,
-      cursor: cursor,
-    });
+    const postLangs: string[] = db
+      .prepare(`SELECT language FROM languages WHERE post_id = ?`)
+      .all(postId)
+      .map((row) => row.language);
+
+    const info = db.prepare(`DELETE FROM posts WHERE id = @id`).run({ id: postId });
+
     if (info.changes > 0) {
-      logger.debug(`Soft deleted post ${postId}`);
+      logger.debug(`Hard deleted post ${postId}`);
+      return postLangs;
     } else {
-      logger.warn(`Attempted to soft delete non-existent post ${postId}`);
+      logger.warn(`Attempted to delete non-existent post ${postId}`);
+      return [];
     }
   } catch (error) {
-    logger.error(`Error soft deleting post: ${(error as Error).message}`, { postId });
+    logger.error(`Error deleting post: ${(error as Error).message}`, { postId });
+    return [];
   }
 }
-
-export function purgeOldPosts(days: number) {
+export function purgeSoftDeletedPosts(days: number) {
   const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  const stmt = db.prepare(`DELETE FROM posts WHERE created_at < ? AND is_deleted = TRUE`);
-  const info = stmt.run(cutoffDate);
-  logger.info(`Purged ${info.changes} soft-deleted posts older than ${days} days.`);
+  const deleteStmt = db.prepare(`DELETE FROM posts WHERE created_at < ? AND is_deleted = TRUE LIMIT ?`);
+  const BATCH_SIZE = 1000;
+
+  const purge = db.transaction(() => {
+    let changes;
+    do {
+      changes = deleteStmt.run(cutoffDate, BATCH_SIZE).changes;
+      if (changes > 0) {
+        logger.info(`Purged ${changes} soft-deleted posts older than ${days} days.`);
+      }
+    } while (changes === BATCH_SIZE);
+  });
+
+  try {
+    db.pragma('synchronous = OFF');
+    db.pragma('journal_mode = MEMORY');
+
+    purge();
+  } catch (error) {
+    logger.error(`Error purging old posts: ${(error as Error).message}`);
+  } finally {
+    try {
+      db.pragma('synchronous = NORMAL');
+      db.pragma('journal_mode = WAL;');
+    } catch (restoreError) {
+      logger.error(`Error restoring PRAGMA settings: ${(restoreError as Error).message}`);
+    }
+  }
 }
+const PURGE_DAYS_ENV = parseInt(process.env.PURGE_DAYS ?? '7', 10);
 
-// Schedule periodic purging (e.g., every hour)
-const PURGE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-const PURGE_DAYS_ENV = parseInt(process.env.PURGE_DAYS || '7', 10);
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const purgeJob = schedule.scheduleJob('15 6 * * *', () => {
+  purgeSoftDeletedPosts(PURGE_DAYS_ENV);
+  logger.info(`Scheduled purge job executed at ${new Date().toISOString()}`);
+});
 
-const purgeInterval = setInterval(() => {
-  purgeOldPosts(PURGE_DAYS_ENV);
-}, PURGE_INTERVAL_MS);
-
-export function closeDatabase() {
-  clearInterval(purgeInterval);
-  db.close();
-  logger.info('Database connection closed.');
+export function closeDatabase(): Promise<void> {
+  return schedule
+    .gracefulShutdown()
+    .then(() => {
+      db.close();
+      logger.info('Database connection closed.');
+    })
+    .catch((error: unknown) => {
+      logger.error(`Error closing database: ${(error as Error).message}`);
+    });
 }

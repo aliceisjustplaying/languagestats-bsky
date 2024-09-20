@@ -1,19 +1,27 @@
-export interface EventStream {
+export type EventType = 'com' | 'acc' | 'id';
+export type CommitOpType = 'c' | 'u' | 'd';
+
+export interface JetstreamSubject {
+  cid: string;
+  uri: string;
+}
+
+export interface JetstreamCommit {
+  rev?: string;
+  type: CommitOpType;
+  collection?: string;
+  rkey?: string;
+  cid?: string;
+  record?: string; // BskyFeedPostRecord in JSON format
+}
+
+export interface JetstreamEvent {
   did: string;
   time_us: number;
-  type: string;
-  commit?: {
-    rev: string;
-    type: string;
-    collection: string;
-    rkey: string;
-    record: {
-      $type: string;
-      createdAt: string;
-      subject: {
-        cid: string;
-        uri: string;
-      };
-    };
-  };
+  type: EventType;
+  commit?: JetstreamCommit;
+}
+
+export interface OperationsByType {
+  posts: JetstreamEvent[];
 }

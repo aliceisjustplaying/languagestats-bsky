@@ -11,6 +11,9 @@
     "lint:fix": "npx eslint --fix ."
   },
   "dependencies": {
+    "@atproto/bsky": "^0.0.83",
+    "@atproto/lexicon": "^0.4.1",
+    "@atproto/xrpc-server": "^0.6.4",
     "better-sqlite3": "^11.3.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",

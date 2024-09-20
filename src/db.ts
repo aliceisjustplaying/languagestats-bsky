@@ -115,25 +115,19 @@ export function savePost(post: {
   }
 }
 
-export function deletePost(postId: string): string[] {
+export function deletePost(postId: string): boolean {
   try {
-    const postLangs: string[] = db
-      .prepare(`SELECT language FROM languages WHERE post_id = ?`)
-      .all(postId)
-      .map((row) => row.language);
-
     const info = db.prepare(`DELETE FROM posts WHERE id = @id`).run({ id: postId });
-
     if (info.changes > 0) {
       logger.info(`Deleted post ${postId}`);
-      return postLangs;
+      return true;
     } else {
       logger.info(`Attempted to delete non-existent post ${postId}`);
-      return [];
+      return false;
     }
   } catch (error) {
     logger.error(`Error deleting post: ${(error as Error).message}`, { postId });
-    return [];
+    return false;
   }
 }
 

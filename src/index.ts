@@ -4,7 +4,7 @@ import process from 'process';
 
 import { closeDatabase, deletePost, getLastCursor, savePost, updateLastCursor } from './db.js';
 import logger from './logger.js';
-import { decrementMetrics, decrementPosts, incrementErrors, incrementMetrics, incrementPosts } from './metrics.js';
+import { decrementPosts, incrementErrors, incrementMetrics, incrementPosts } from './metrics.js';
 import { app } from './web.js';
 
 dotenv.config();
@@ -71,9 +71,8 @@ function handleDelete(event: CommitEvent<'app.bsky.feed.post'>) {
 
   try {
     const postId = `${event.did}:${commit.rkey}`;
-    const langsToDecrement = deletePost(postId);
-    if (langsToDecrement.length > 0) {
-      decrementMetrics(langsToDecrement);
+    const success = deletePost(postId);
+    if (success) {
       decrementPosts();
     }
     if (event.time_us > latestCursor) {

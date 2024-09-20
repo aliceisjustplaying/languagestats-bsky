@@ -1,7 +1,5 @@
 import { Counter, Gauge, Registry } from 'prom-client';
 
-import logger from './logger.js';
-
 const register = new Registry();
 
 export const languageGauge = new Gauge({
@@ -38,13 +36,6 @@ export const deletedPostsPerSecond = new Gauge({
 export const errorCounter = new Counter({
   name: 'bluesky_error_count',
   help: 'Total number of errors encountered',
-  registers: [register],
-});
-
-export const unexpectedEventCounter = new Counter({
-  name: 'bluesky_unexpected_event_count',
-  help: 'Total number of unexpected events received',
-  labelNames: ['event_type', 'collection'],
   registers: [register],
 });
 
@@ -85,23 +76,6 @@ export function decrementPosts(count = 1) {
 
 export function incrementErrors() {
   errorCounter.inc();
-}
-
-export function incrementUnexpectedEvent(eventType: string, collection: string) {
-  unexpectedEventCounter.inc({ event_type: eventType, collection });
-}
-
-export function decrementMetrics(langs: string[]) {
-  langs.forEach((lang) => {
-    if (languageCounts[lang] && languageCounts[lang] > 0) {
-      languageCounts[lang] -= 1;
-      languageGauge.set({ language: lang }, languageCounts[lang]);
-    } else {
-      logger.warn(`Language count for "${lang}" is already zero or does not exist`);
-    }
-  });
-
-  deletedPosts.inc(1);
 }
 
 export { register };

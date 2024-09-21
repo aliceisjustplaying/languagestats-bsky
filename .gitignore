@@ -1,4 +1,4 @@
 data/posts.db
 node_modules
 .env
-drizzle
+drizzle/meta

@@ -1,11 +1,19 @@
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/node-postgres';
-import * as pg from 'pg';
 import dotenv from 'dotenv';
+import { eq, ExtractTablesWithRelations } from 'drizzle-orm';
+import { drizzle, NodePgQueryResultHKT } from 'drizzle-orm/node-postgres';
+import emojiRegex from 'emoji-regex';
+import * as pg from 'pg';
 
 import logger from './logger.js';
 import * as schema from './schema.js';
-import { cursor, languages, posts } from './schema.js';
+import {
+  cursor,
+  emojiUsage,
+  emojis,
+  languages,
+  posts,
+} from './schema.js';
+import { PgTransaction } from 'drizzle-orm/pg-core';
 
 dotenv.config();
 
@@ -16,6 +24,19 @@ export const pool = new Pool({
 });
 
 export const db = drizzle(pool, { schema });
+
+// In-memory Emoji Cache
+export const emojiCache = new Map<string, number>();
+
+// Preload Emoji Cache
+async function preloadEmojiCache(tx: PgTransaction<NodePgQueryResultHKT, typeof schema, ExtractTablesWithRelations<typeof schema>>) {
+  const allEmojis = await tx.select({ symbol: emojis.symbol, id: emojis.id }).from(emojis);
+  allEmojis.forEach((emoji: { symbol: string | null; id: number }) => {
+    if (emoji.symbol) {
+      emojiCache.set(emoji.symbol, emoji.id);
+    }
+  });
+}
 
 export async function getLastCursor(): Promise<number> {
   logger.debug('Getting last cursor...');
@@ -34,7 +55,7 @@ export async function getLastCursor(): Promise<number> {
     return Number(currentEpochMicroseconds);
   }
   logger.info(`Returning cursor from database: ${result[0].lastCursor}`);
-  return result[0].lastCursor;
+  return result[0].lastCursor!;
 }
 
 export async function updateLastCursor(newCursor: number): Promise<void> {
@@ -57,6 +78,10 @@ export async function savePost(post: {
 }) {
   try {
     await db.transaction(async (tx) => {
+      // Preload Emoji Cache
+      await preloadEmojiCache(tx);
+
+      // Insert Post
       await tx
         .insert(posts)
         .values({
@@ -69,6 +94,7 @@ export async function savePost(post: {
         })
         .onConflictDoNothing();
 
+      // Insert Languages
       const languageEntries = Array.from(post.langs).map((lang) => ({
         postId: post.id,
         language: lang,
@@ -76,6 +102,55 @@ export async function savePost(post: {
 
       if (languageEntries.length > 0) {
         await tx.insert(languages).values(languageEntries);
+      }
+
+      // Extract Emojis
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+      const regex = emojiRegex();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      const emojisFound = post.text.match(regex) ?? [];
+      const uniqueEmojis = Array.from(new Set(emojisFound));
+
+      // Identify New Emojis
+      const newEmojis = uniqueEmojis.filter((symbol) => !emojiCache.has(symbol));
+
+      // Bulk Insert New Emojis
+      let insertedEmojis: { symbol: string | null; id: number }[] = [];
+      if (newEmojis.length > 0) {
+        insertedEmojis = await tx
+          .insert(emojis)
+          .values(newEmojis.map((symbol) => ({ symbol })))
+          .onConflictDoNothing()
+          .returning();
+
+        // Update Cache with Inserted Emojis
+        insertedEmojis.forEach((emoji: { symbol: string | null; id: number }) => {
+          emojiCache.set(emoji.symbol!, emoji.id);
+        });
+      }
+
+      // Fetch IDs for Newly Inserted or Existing Emojis
+      const allEmojis = uniqueEmojis.map((symbol) => ({
+        symbol,
+        id: emojiCache.get(symbol)!,
+      }));
+
+      // Prepare EmojiUsage Records
+      const emojiUsageRecords: { emojiId: number; language: string; timestamp: Date; cursor: number }[] = [];
+      allEmojis.forEach(({ id }) => {
+        post.langs.forEach((language) => {
+          emojiUsageRecords.push({
+            emojiId: id,
+            language,
+            timestamp: new Date(),
+            cursor: post.cursor,
+          });
+        });
+      });
+
+      // Bulk Insert EmojiUsage Records
+      if (emojiUsageRecords.length > 0) {
+        await tx.insert(emojiUsage).values(emojiUsageRecords);
       }
 
       logger.debug(`Saved/Updated post ${post.id}`);
@@ -89,10 +164,10 @@ export async function deletePost(postId: string): Promise<boolean> {
   try {
     const result = await db.delete(posts).where(eq(posts.id, postId)).returning();
     if (result.length > 0) {
-      logger.info(`Deleted post ${postId}`);
+      logger.debug(`Deleted post ${postId}`);
       return true;
     } else {
-      logger.info(`Attempted to delete non-existent post ${postId}`);
+      logger.debug(`Attempted to delete non-existent post ${postId}`);
       return false;
     }
   } catch (error) {
@@ -109,3 +184,21 @@ export async function closeDatabase(): Promise<void> {
     logger.error(`Error closing database: ${(error as Error).message}`);
   }
 }
+
+// // Aggregated Data Retrieval
+// export async function getAllTimeEmojiStats() {
+//   return db.select().from(emojiAllTimeStats);
+// }
+
+// export async function getEmojiStatsByLanguage(language: string) {
+//   return db.select().from(emojiLanguageStats).where(eq(emojiLanguageStats.language, language));
+// }
+
+// export async function getDailyTopEmojis(language: string, limit = 10) {
+//   return db
+//     .select()
+//     .from(emojiDailyStats)
+//     .where(eq(emojiDailyStats.language, language))
+//     .orderBy(desc(emojiDailyStats.dailyCount))
+//     .limit(limit);
+// }

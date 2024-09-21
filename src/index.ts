@@ -13,20 +13,25 @@ const FIREHOSE_URL = process.env.FIREHOSE_URL ?? 'wss://jetstream.atproto.tools/
 const PORT = parseInt(process.env.PORT ?? '9201', 10);
 const CURSOR_UPDATE_INTERVAL_MS = 10 * 1000;
 
-let latestCursor = getLastCursor();
+let latestCursor = await getLastCursor();
 logger.info(`Initial cursor set to: ${latestCursor}`);
 let cursorUpdateInterval: NodeJS.Timeout | null = null;
 
 function initializeCursorUpdate() {
   cursorUpdateInterval = setInterval(() => {
     if (latestCursor > 0) {
-      updateLastCursor(latestCursor);
-      logger.info(`Cursor updated to ${latestCursor} at ${new Date().toISOString()}`);
+      updateLastCursor(latestCursor)
+        .then(() => {
+          logger.info(`Cursor updated to ${latestCursor} at ${new Date().toISOString()}`);
+        })
+        .catch((error: unknown) => {
+          logger.error(`Error updating cursor: ${(error as Error).message}`);
+        });
     }
   }, CURSOR_UPDATE_INTERVAL_MS);
 }
 
-function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
+async function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
   const { commit } = event;
 
   if (!commit.rkey) return;
@@ -51,7 +56,7 @@ function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
       cursor: event.time_us,
       text: record.text,
     };
-    savePost(post);
+    await savePost(post);
     incrementMetrics(post.langs);
     incrementPosts();
     if (event.time_us > latestCursor) {
@@ -64,14 +69,14 @@ function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
   }
 }
 
-function handleDelete(event: CommitEvent<'app.bsky.feed.post'>) {
+async function handleDelete(event: CommitEvent<'app.bsky.feed.post'>) {
   const { commit } = event;
 
   if (!commit.rkey) return;
 
   try {
     const postId = `${event.did}:${commit.rkey}`;
-    const success = deletePost(postId);
+    const success = await deletePost(postId);
     if (success) {
       decrementPosts();
     }
@@ -114,11 +119,11 @@ jetstream.on('error', (error) => {
 });
 
 jetstream.onCreate('app.bsky.feed.post', (event) => {
-  handleCreate(event);
+  void handleCreate(event);
 });
 
 jetstream.onDelete('app.bsky.feed.post', (event) => {
-  handleDelete(event);
+  void handleDelete(event);
 });
 
 function shutdown() {
@@ -132,7 +137,7 @@ function shutdown() {
     logger.info('HTTP server closed.');
 
     jetstream.close();
-    closeDatabase();
+    void closeDatabase();
     process.exit(0);
   });
 

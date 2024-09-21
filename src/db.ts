@@ -1,85 +1,49 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import * as pg from 'pg';
 
 import logger from './logger.js';
+import * as schema from './schema.js';
+import { cursor, languages, posts } from './schema.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const { Pool } = pg.default;
 
-const dbPath = path.resolve(__dirname, '../data/posts.db');
-const db = new Database(dbPath);
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 
-logger.info(`Initializing database schema...`);
+export const db = drizzle(pool, { schema });
 
-db.exec(`
-  PRAGMA foreign_keys = ON;
-
-  CREATE TABLE IF NOT EXISTS posts (
-    id TEXT PRIMARY KEY,
-    created_at TEXT,
-    did TEXT,
-    rkey TEXT,
-    cursor INTEGER,
-    text TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS languages (
-    post_id TEXT,
-    language TEXT,
-    FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_languages_language ON languages(language);
-
-  CREATE TABLE IF NOT EXISTS cursor (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    last_cursor INTEGER
-  );
-`);
-
-const currentEpochMicroseconds = BigInt(Date.now()) * 1000n;
-
-db.exec(`INSERT OR IGNORE INTO cursor (id, last_cursor) VALUES (1, ${currentEpochMicroseconds});`);
-
-logger.info(`Setting database pragmas...`);
-
-db.pragma('journal_mode = WAL'); // Better write concurrency
-db.pragma('synchronous = NORMAL'); // Balances performance with durability
-db.pragma('cache_size = -524288'); // Adjust based on system memory (512MB)
-db.pragma('temp_store = MEMORY'); // Store temporary data in memory for better performance
-db.pragma('locking_mode = NORMAL'); // Allows better concurrency
-
-logger.info(`Database schema initialized.`);
-
-const insertPost = db.prepare(`
-  INSERT OR IGNORE INTO posts (id, created_at, did, rkey, cursor, text)
-  VALUES (@id, @created_at, @did, @rkey, @cursor, @text)
-`);
-
-const insertLanguage = db.prepare(`
-  INSERT INTO languages (post_id, language)
-  VALUES (@post_id, @language)
-`);
-
-export function getLastCursor(): number {
-  logger.info('Getting last cursor...');
-  const row = db.prepare(`SELECT last_cursor FROM cursor WHERE id = 1`).get();
-  logger.info(`Returning cursor from database: ${row.last_cursor}`);
-  return row.last_cursor;
+export async function getLastCursor(): Promise<number> {
+  logger.debug('Getting last cursor...');
+  const result = await db.select({ lastCursor: cursor.lastCursor }).from(cursor).where(eq(cursor.id, 1));
+  if (result.length === 0) {
+    logger.info('No cursor found, initializing with current epoch in microseconds...');
+    const currentEpochMicroseconds = BigInt(Date.now()) * 1000n;
+    await db
+      .insert(cursor)
+      .values({
+        id: 1,
+        lastCursor: Number(currentEpochMicroseconds),
+      })
+      .execute();
+    logger.info(`Initialized cursor with value: ${currentEpochMicroseconds}`);
+    return Number(currentEpochMicroseconds);
+  }
+  logger.info(`Returning cursor from database: ${result[0].lastCursor}`);
+  return result[0].lastCursor;
 }
 
-export function updateLastCursor(newCursor: number): void {
-  const result = db
-    .prepare(`UPDATE cursor SET last_cursor = @last_cursor WHERE id = 1`)
-    .run({ last_cursor: newCursor });
-  if (result.changes > 0) {
+export async function updateLastCursor(newCursor: number): Promise<void> {
+  try {
+    await db.update(cursor).set({ lastCursor: newCursor }).where(eq(cursor.id, 1));
     logger.info(`Updated last cursor to ${newCursor}`);
-  } else {
-    logger.warn(`Failed to update cursor to ${newCursor}`);
+  } catch (error: unknown) {
+    logger.error(`Error updating cursor: ${(error as Error).message}`);
   }
 }
-export function savePost(post: {
+
+export async function savePost(post: {
   id: string;
   created_at: string;
   langs: Set<string>;
@@ -88,37 +52,40 @@ export function savePost(post: {
   cursor: number;
   text: string;
 }) {
-  const insertOrUpdate = db.transaction((postData: typeof post) => {
-    insertPost.run({
-      id: postData.id,
-      created_at: postData.created_at,
-      did: postData.did,
-      rkey: postData.rkey,
-      cursor: postData.cursor,
-      text: postData.text,
-    });
-
-    postData.langs.forEach((lang) => {
-      insertLanguage.run({
-        post_id: postData.id,
-        language: lang,
-      });
-    });
-
-    logger.debug(`Saved/Updated post ${postData.id}`);
-  });
-
   try {
-    insertOrUpdate(post);
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(posts)
+        .values({
+          id: post.id,
+          createdAt: post.created_at,
+          did: post.did,
+          rkey: post.rkey,
+          cursor: post.cursor,
+          text: post.text,
+        })
+        .onConflictDoNothing();
+
+      const languageEntries = Array.from(post.langs).map((lang) => ({
+        postId: post.id,
+        language: lang,
+      }));
+
+      if (languageEntries.length > 0) {
+        await tx.insert(languages).values(languageEntries);
+      }
+
+      logger.debug(`Saved/Updated post ${post.id}`);
+    });
   } catch (error) {
     logger.error(`Database insertion/update error: ${(error as Error).message}`, { post });
   }
 }
 
-export function deletePost(postId: string): boolean {
+export async function deletePost(postId: string): Promise<boolean> {
   try {
-    const info = db.prepare(`DELETE FROM posts WHERE id = @id`).run({ id: postId });
-    if (info.changes > 0) {
+    const result = await db.delete(posts).where(eq(posts.id, postId)).returning();
+    if (result.length > 0) {
       logger.info(`Deleted post ${postId}`);
       return true;
     } else {
@@ -131,9 +98,9 @@ export function deletePost(postId: string): boolean {
   }
 }
 
-export function closeDatabase() {
+export async function closeDatabase(): Promise<void> {
   try {
-    db.close();
+    await pool.end();
     logger.info('Database connection closed.');
   } catch (error) {
     logger.error(`Error closing database: ${(error as Error).message}`);

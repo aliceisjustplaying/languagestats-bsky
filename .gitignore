@@ -1,3 +1,4 @@
 data/posts.db
 node_modules
 .env
+drizzle

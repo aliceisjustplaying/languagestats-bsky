@@ -1,10 +1,13 @@
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as pg from 'pg';
+import dotenv from 'dotenv';
 
 import logger from './logger.js';
 import * as schema from './schema.js';
 import { cursor, languages, posts } from './schema.js';
+
+dotenv.config();
 
 const { Pool } = pg.default;
 

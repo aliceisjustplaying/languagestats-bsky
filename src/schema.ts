@@ -1,4 +1,4 @@
-import { bigint, pgTable, serial, text } from 'drizzle-orm/pg-core';
+import { bigint, index, pgTable, serial, text } from 'drizzle-orm/pg-core';
 
 export const posts = pgTable('posts', {
   id: text('id').primaryKey(),
@@ -9,10 +9,19 @@ export const posts = pgTable('posts', {
   text: text('text'),
 });
 
-export const languages = pgTable('languages', {
-  postId: text('post_id').references(() => posts.id, { onDelete: 'cascade' }),
-  language: text('language'),
-});
+export const languages = pgTable(
+  'languages',
+  {
+    postId: text('post_id').references(() => posts.id, { onDelete: 'cascade' }),
+    language: text('language'),
+  },
+  (table) => {
+    return {
+      postIdIdx: index('post_id_idx').on(table.postId),
+      languageIdx: index('language_idx').on(table.language),
+    };
+  },
+);
 
 export const cursor = pgTable('cursor', {
   id: serial('id').primaryKey(),

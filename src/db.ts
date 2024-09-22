@@ -34,7 +34,7 @@ export async function getLastCursor(): Promise<number> {
     return Number(currentEpochMicroseconds);
   }
   logger.info(`Returning cursor from database: ${result[0].lastCursor}`);
-  return result[0].lastCursor;
+  return result[0].lastCursor!;
 }
 
 export async function updateLastCursor(newCursor: number): Promise<void> {

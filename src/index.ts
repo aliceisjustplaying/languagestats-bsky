@@ -109,7 +109,6 @@ jetstream.on('open', () => {
 
 jetstream.on('close', () => {
   logger.info('Jetstream firehose connection closed.');
-  shutdown();
 });
 
 jetstream.on('error', (error) => {

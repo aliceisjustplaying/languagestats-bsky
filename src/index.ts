@@ -2,7 +2,7 @@ import { CommitCreateEvent, CommitEvent, Jetstream } from '@skyware/jetstream';
 import dotenv from 'dotenv';
 import process from 'process';
 
-import { closeDatabase, deletePost, getLastCursor, savePost, updateLastCursor } from './db.js';
+import { closeDatabase, deletePost, /*getLastCursor,*/ savePost, /*updateLastCursor */ } from './db.js';
 import logger from './logger.js';
 import { decrementPosts, incrementErrors, incrementMetrics, incrementPosts } from './metrics.js';
 import { app } from './web.js';
@@ -11,25 +11,25 @@ dotenv.config();
 
 const FIREHOSE_URL = process.env.FIREHOSE_URL ?? 'wss://jetstream.atproto.tools/subscribe'; // default to Jaz's Jetstream instance
 const PORT = parseInt(process.env.PORT ?? '9201', 10);
-const CURSOR_UPDATE_INTERVAL_MS = 10 * 1000;
+// const CURSOR_UPDATE_INTERVAL_MS = 10 * 1000;
 
-let latestCursor = await getLastCursor();
-logger.info(`Initial cursor set to: ${latestCursor}`);
-let cursorUpdateInterval: NodeJS.Timeout | null = null;
+// let latestCursor = await getLastCursor();
+// logger.info(`Initial cursor set to: ${latestCursor}`);
+// let cursorUpdateInterval: NodeJS.Timeout | null = null;
 
-function initializeCursorUpdate() {
-  cursorUpdateInterval = setInterval(() => {
-    if (latestCursor > 0) {
-      updateLastCursor(latestCursor)
-        .then(() => {
-          logger.info(`Cursor updated to ${latestCursor} at ${new Date().toISOString()}`);
-        })
-        .catch((error: unknown) => {
-          logger.error(`Error updating cursor: ${(error as Error).message}`);
-        });
-    }
-  }, CURSOR_UPDATE_INTERVAL_MS);
-}
+// function initializeCursorUpdate() {
+//   cursorUpdateInterval = setInterval(() => {
+//     if (latestCursor > 0) {
+//       updateLastCursor(latestCursor)
+//         .then(() => {
+//           logger.info(`Cursor updated to ${latestCursor} at ${new Date().toISOString()}`);
+//         })
+//         .catch((error: unknown) => {
+//           logger.error(`Error updating cursor: ${(error as Error).message}`);
+//         });
+//     }
+//   }, CURSOR_UPDATE_INTERVAL_MS);
+// }
 
 async function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
   const { commit } = event;
@@ -58,9 +58,9 @@ async function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
     await savePost(post);
     incrementMetrics(post.langs);
     incrementPosts();
-    if (event.time_us > latestCursor) {
-      latestCursor = event.time_us;
-    }
+    // if (event.time_us > latestCursor) {
+    //   latestCursor = event.time_us;
+    // }
   } catch (error) {
     logger.error(`Error parsing record in "create" commit: ${(error as Error).message}`, { commit, record });
     logger.error(`Malformed record data: ${JSON.stringify(record)}`);
@@ -79,9 +79,9 @@ async function handleDelete(event: CommitEvent<'app.bsky.feed.post'>) {
     if (success) {
       decrementPosts();
     }
-    if (event.time_us > latestCursor) {
-      latestCursor = event.time_us;
-    }
+    // if (event.time_us > latestCursor) {
+    //   latestCursor = event.time_us;
+    // }
   } catch (error) {
     logger.error(`Error deleting post: ${(error as Error).message}`, { rkey: commit.rkey });
     incrementErrors();
@@ -95,16 +95,16 @@ const server = app.listen(PORT, '127.0.0.1', () => {
 const jetstream = new Jetstream({
   wantedCollections: ['app.bsky.feed.post'],
   endpoint: FIREHOSE_URL,
-  cursor: latestCursor.toString(),
+  // cursor: latestCursor.toString(),
 });
 
 jetstream.start();
 
 jetstream.on('open', () => {
   logger.info('Connected to Jetstream firehose.');
-  if (!cursorUpdateInterval) {
-    initializeCursorUpdate();
-  }
+  // if (!cursorUpdateInterval) {
+  //   initializeCursorUpdate();
+  // }
 });
 
 jetstream.on('close', () => {
@@ -127,9 +127,9 @@ jetstream.onDelete('app.bsky.feed.post', (event) => {
 function shutdown() {
   logger.info('Shutting down gracefully...');
 
-  if (cursorUpdateInterval) {
-    clearInterval(cursorUpdateInterval);
-  }
+  // if (cursorUpdateInterval) {
+  //   clearInterval(cursorUpdateInterval);
+  // }
 
   server.close(() => {
     logger.info('HTTP server closed.');

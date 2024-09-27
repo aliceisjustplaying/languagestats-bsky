@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 
 import logger from './logger.js';
 import * as schema from './schema.js';
-import { cursor, languages, posts } from './schema.js';
+import { /*cursor, */languages, posts } from './schema.js';
 
 dotenv.config();
 
@@ -17,34 +17,34 @@ export const pool = new Pool({
 
 export const db = drizzle(pool, { schema });
 
-export async function getLastCursor(): Promise<number> {
-  logger.debug('Getting last cursor...');
-  const result = await db.select({ lastCursor: cursor.lastCursor }).from(cursor).where(eq(cursor.id, 1));
-  if (result.length === 0) {
-    logger.info('No cursor found, initializing with current epoch in microseconds...');
-    const currentEpochMicroseconds = BigInt(Date.now()) * 1000n;
-    await db
-      .insert(cursor)
-      .values({
-        id: 1,
-        lastCursor: Number(currentEpochMicroseconds),
-      })
-      .execute();
-    logger.info(`Initialized cursor with value: ${currentEpochMicroseconds}`);
-    return Number(currentEpochMicroseconds);
-  }
-  logger.info(`Returning cursor from database: ${result[0].lastCursor}`);
-  return result[0].lastCursor!;
-}
+// export async function getLastCursor(): Promise<number> {
+//   logger.debug('Getting last cursor...');
+//   const result = await db.select({ lastCursor: cursor.lastCursor }).from(cursor).where(eq(cursor.id, 1));
+//   if (result.length === 0) {
+//     logger.info('No cursor found, initializing with current epoch in microseconds...');
+//     const currentEpochMicroseconds = BigInt(Date.now()) * 1000n;
+//     await db
+//       .insert(cursor)
+//       .values({
+//         id: 1,
+//         lastCursor: Number(currentEpochMicroseconds),
+//       })
+//       .execute();
+//     logger.info(`Initialized cursor with value: ${currentEpochMicroseconds}`);
+//     return Number(currentEpochMicroseconds);
+//   }
+//   logger.info(`Returning cursor from database: ${result[0].lastCursor}`);
+//   return result[0].lastCursor!;
+// }
 
-export async function updateLastCursor(newCursor: number): Promise<void> {
-  try {
-    await db.update(cursor).set({ lastCursor: newCursor }).where(eq(cursor.id, 1));
-    logger.info(`Updated last cursor to ${newCursor}`);
-  } catch (error: unknown) {
-    logger.error(`Error updating cursor: ${(error as Error).message}`);
-  }
-}
+// export async function updateLastCursor(newCursor: number): Promise<void> {
+//   try {
+//     await db.update(cursor).set({ lastCursor: newCursor }).where(eq(cursor.id, 1));
+//     logger.info(`Updated last cursor to ${newCursor}`);
+//   } catch (error: unknown) {
+//     logger.error(`Error updating cursor: ${(error as Error).message}`);
+//   }
+// }
 
 export async function savePost(post: {
   id: string;

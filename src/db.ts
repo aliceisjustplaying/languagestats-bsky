@@ -90,7 +90,7 @@ export async function deletePost(postId: string): Promise<boolean> {
       logger.info(`Deleted post ${postId}`);
       return true;
     } else {
-      logger.info(`Attempted to delete non-existent post ${postId}`);
+      logger.debug(`Attempted to delete non-existent post ${postId}`);
       return false;
     }
   } catch (error) {

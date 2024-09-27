@@ -54,7 +54,6 @@ async function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
       did: event.did,
       rkey: rkey,
       cursor: event.time_us,
-      text: record.text,
     };
     await savePost(post);
     incrementMetrics(post.langs);

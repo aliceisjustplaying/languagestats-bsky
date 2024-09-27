@@ -6,7 +6,6 @@ export const posts = pgTable('posts', {
   did: text('did'),
   rkey: text('rkey'),
   cursor: bigint('cursor', { mode: 'number' }),
-  text: text('text'),
 });
 
 export const languages = pgTable(

@@ -53,7 +53,6 @@ export async function savePost(post: {
   did: string;
   rkey: string;
   cursor: number;
-  text: string;
 }) {
   try {
     await db.transaction(async (tx) => {
@@ -65,7 +64,6 @@ export async function savePost(post: {
           did: post.did,
           rkey: post.rkey,
           cursor: post.cursor,
-          text: post.text,
         })
         .onConflictDoNothing();
 

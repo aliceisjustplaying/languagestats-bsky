@@ -1,11 +1,15 @@
-import { bigint, index, pgTable, serial, text } from 'drizzle-orm/pg-core';
+import { bigint, index, pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
 
 export const posts = pgTable('posts', {
   id: text('id').primaryKey(),
-  createdAt: text('created_at'),
+  createdAt: timestamp('created_at', { mode: 'date', withTimezone: true, precision: 6 }),
   did: text('did'),
   rkey: text('rkey'),
   cursor: bigint('cursor', { mode: 'number' }),
+}, (table) => {
+  return {
+    createdAtIndex: index('created_at_idx').on(table.createdAt),
+  };
 });
 
 export const languages = pgTable(

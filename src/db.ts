@@ -48,7 +48,7 @@ export async function updateLastCursor(newCursor: number): Promise<void> {
 
 export async function savePost(post: {
   id: string;
-  created_at: string;
+  created_at: Date;
   langs: Set<string>;
   did: string;
   rkey: string;

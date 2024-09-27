@@ -49,7 +49,7 @@ async function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
 
     const post = {
       id: `${event.did}:${rkey}`,
-      created_at: record.createdAt,
+      created_at: new Date(record.createdAt),
       langs: langs,
       did: event.did,
       rkey: rkey,

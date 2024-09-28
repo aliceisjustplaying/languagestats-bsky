@@ -52,7 +52,7 @@ export function incrementMetrics(langs: Set<string>) {
     languageGauge.set({ language: lang }, languageCounts[lang]);
   });
 
-  totalPosts.inc(1);
+  totalPosts.inc();
 }
 
 let postsLastInterval = 0;

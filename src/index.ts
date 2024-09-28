@@ -2,9 +2,9 @@ import { CommitCreateEvent, CommitEvent, Jetstream } from '@skyware/jetstream';
 import dotenv from 'dotenv';
 import process from 'process';
 
-import { closeDatabase, deletePost, /*getLastCursor,*/ savePost, /*updateLastCursor */ } from './db.js';
+// import { closeDatabase, /*deletePost,*/ /*getLastCursor,*/ /*savePost, /*updateLastCursor */ } from './db.js';
 import logger from './logger.js';
-import { decrementPosts, incrementErrors, incrementMetrics, incrementPosts } from './metrics.js';
+import { decrementPostsCount, incrementErrors, incrementMetrics, incrementPostsCount } from './metrics.js';
 import { app } from './web.js';
 
 dotenv.config();
@@ -31,7 +31,7 @@ const PORT = parseInt(process.env.PORT ?? '9201', 10);
 //   }, CURSOR_UPDATE_INTERVAL_MS);
 // }
 
-async function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
+/*async*/ function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
   const { commit } = event;
 
   if (!commit.rkey) return;
@@ -55,9 +55,9 @@ async function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
       rkey: rkey,
       cursor: event.time_us,
     };
-    await savePost(post);
+    // await savePost(post);
     incrementMetrics(post.langs);
-    incrementPosts();
+    incrementPostsCount();
     // if (event.time_us > latestCursor) {
     //   latestCursor = event.time_us;
     // }
@@ -68,22 +68,22 @@ async function handleCreate(event: CommitCreateEvent<'app.bsky.feed.post'>) {
   }
 }
 
-async function handleDelete(event: CommitEvent<'app.bsky.feed.post'>) {
+/*async*/ function handleDelete(event: CommitEvent<'app.bsky.feed.post'>) {
   const { commit } = event;
 
   if (!commit.rkey) return;
 
   try {
-    const postId = `${event.did}:${commit.rkey}`;
-    const success = await deletePost(postId);
-    if (success) {
-      decrementPosts();
-    }
+    // const postId = `${event.did}:${commit.rkey}`;
+    // const success = await deletePost(postId);
+    // if (success) {
+      decrementPostsCount();
+    // }
     // if (event.time_us > latestCursor) {
     //   latestCursor = event.time_us;
     // }
   } catch (error) {
-    logger.error(`Error deleting post: ${(error as Error).message}`, { rkey: commit.rkey });
+    // logger.error(`Error deleting post: ${(error as Error).message}`, { rkey: commit.rkey });
     incrementErrors();
   }
 }
@@ -117,11 +117,11 @@ jetstream.on('error', (error) => {
 });
 
 jetstream.onCreate('app.bsky.feed.post', (event) => {
-  void handleCreate(event);
+  handleCreate(event);
 });
 
 jetstream.onDelete('app.bsky.feed.post', (event) => {
-  void handleDelete(event);
+  handleDelete(event);
 });
 
 function shutdown() {
@@ -135,7 +135,7 @@ function shutdown() {
     logger.info('HTTP server closed.');
 
     jetstream.close();
-    void closeDatabase();
+    // void closeDatabase();
     process.exit(0);
   });
 

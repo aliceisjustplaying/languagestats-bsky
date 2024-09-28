@@ -1,6 +1,7 @@
-import { Counter, Gauge, Registry } from 'prom-client';
+import { Counter, Gauge, Registry, collectDefaultMetrics } from 'prom-client';
 
 const register = new Registry();
+collectDefaultMetrics({ register });
 
 export const languageGauge = new Gauge({
   name: 'bluesky_post_languages',
@@ -66,11 +67,11 @@ setInterval(() => {
   deletedPostsLastInterval = 0;
 }, 1000);
 
-export function incrementPosts(count = 1) {
+export function incrementPostsCount(count = 1) {
   postsLastInterval += count;
 }
 
-export function decrementPosts(count = 1) {
+export function decrementPostsCount(count = 1) {
   deletedPostsLastInterval += count;
 }
 
